@@ -2,7 +2,7 @@
 <html>
 <head>
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Ultimate Trading AI System</title>
+<title>Ultimate Trading AI PRO MAX</title>
 <script src="https://s3.tradingview.com/tv.js"></script>
 
 <style>
@@ -15,8 +15,7 @@ input,button {
 }
 button { background:#238636; }
 .buy{color:#00ff9f;} .sell{color:#ff4d4d;}
-.warn{color:#ffaa00;}
-.ai{color:#00c3ff;}
+.warn{color:#ffaa00;} .ai{color:#00c3ff;}
 #chart { height:300px; }
 </style>
 </head>
@@ -25,7 +24,7 @@ button { background:#238636; }
 
 <div class="container">
 
-<h2>🚀 Ultimate Trading AI System</h2>
+<h2>🚀 Trading AI PRO MAX</h2>
 
 <div class="card">
 <input id="symbolInput" placeholder="BTCUSDT / ETHUSDT">
@@ -36,20 +35,12 @@ button { background:#238636; }
 
 <div class="card">📡 Price: <span id="price">-</span></div>
 
-<div class="card">
-<h3>🤖 Auto Signal</h3>
-<div id="autoSignal">Waiting...</div>
-</div>
-
-<div class="card">
-<h3>🧠 Market Direction (MTF)</h3>
-<div id="mtfSignal">Waiting...</div>
-</div>
-
-<div class="card">
-<h3>🧠 AI Predictor</h3>
-<div id="aiSignal">Waiting...</div>
-</div>
+<div class="card"><h3>🤖 Auto Signal</h3><div id="autoSignal"></div></div>
+<div class="card"><h3>🧠 MTF Trend</h3><div id="mtfSignal"></div></div>
+<div class="card"><h3>🧠 AI Predictor</h3><div id="aiSignal"></div></div>
+<div class="card"><h3>🎯 Sniper Entry</h3><div id="sniper"></div></div>
+<div class="card"><h3>💧 Liquidity</h3><div id="liquidityBox"></div></div>
+<div class="card"><h3>📈 Spot Holding AI</h3><div id="spotAI"></div></div>
 
 <button onclick="refresh()">🔄 Refresh</button>
 
@@ -62,13 +53,10 @@ let ws;
 
 // INIT
 function init(){
-
- symbol = document.getElementById("symbolInput").value.toUpperCase() || symbol;
-
- localStorage.setItem("symbol", symbol); // ✅ SAVE SYMBOL
+ symbol=document.getElementById("symbolInput").value.toUpperCase()||symbol;
+ localStorage.setItem("symbol",symbol);
 
  document.getElementById("chart").innerHTML="";
-
  new TradingView.widget({
   container_id:"chart",
   symbol:"BINANCE:"+symbol,
@@ -86,9 +74,7 @@ function init(){
 // WS
 function startWS(){
  if(ws) ws.close();
-
  ws=new WebSocket(`wss://stream.binance.com:9443/ws/${symbol.toLowerCase()}@trade`);
-
  ws.onmessage=e=>{
   let d=JSON.parse(e.data);
   price.innerText=parseFloat(d.p).toFixed(6);
@@ -96,144 +82,109 @@ function startWS(){
 }
 
 // FETCH
-async function getCandles(tf){
- let res=await fetch(`https://api.binance.com/api/v3/klines?symbol=${symbol}&interval=${tf}&limit=100`);
- let d=await res.json();
- return d.map(x=>({
-  close:+x[4], high:+x[2], low:+x[3], volume:+x[5]
- }));
+async function get(tf){
+ let r=await fetch(`https://api.binance.com/api/v3/klines?symbol=${symbol}&interval=${tf}&limit=100`);
+ let d=await r.json();
+ return d.map(x=>({c:+x[4],h:+x[2],l:+x[3],v:+x[5]}));
 }
 
 // EMA
-function ema(arr,p){
- let k=2/(p+1),e=arr[0];
- for(let i=1;i<arr.length;i++){e=arr[i]*k+e*(1-k)}
+function ema(a,p){
+ let k=2/(p+1),e=a[0];
+ for(let i=1;i<a.length;i++){e=a[i]*k+e*(1-k)}
  return e;
-}
-
-// RSI
-function rsi(arr){
- let g=0,l=0;
- for(let i=1;i<arr.length;i++){
-  let d=arr[i]-arr[i-1];
-  if(d>0)g+=d; else l-=d;
- }
- let rs=g/(l||1);
- return 100-(100/(1+rs));
 }
 
 // MAIN
 async function loadData(){
 
- let c5 = await getCandles("5m");
- let c15 = await getCandles("15m");
- let c1h = await getCandles("1h");
- let c4h = await getCandles("4h");
- let c1d = await getCandles("1d");
+let c5=await get("5m");
+let c15=await get("15m");
+let c1h=await get("1h");
+let c4h=await get("4h");
+let c1d=await get("1d");
 
- let close5 = c5.map(c=>c.close);
- let vol5 = c5.map(c=>c.volume);
+let close5=c5.map(x=>x.c);
+let last=c5[c5.length-1];
+let prev=c5[c5.length-2];
 
- let ema9 = ema(close5.slice(-30),9);
- let ema21 = ema(close5.slice(-30),21);
+let ema9=ema(close5.slice(-30),9);
+let ema21=ema(close5.slice(-30),21);
 
- let rsi5 = rsi(close5.slice(-14));
+let move=Math.abs(last.c-prev.l)/last.c;
 
- let last = c5[c5.length-1];
- let prev = c5[c5.length-2];
+// ===== AUTO SIGNAL =====
+let signal="NO TRADE",cls="";
+if(move>0.003 && ema9>ema21 && last.c>prev.h){signal="BUY";cls="buy";}
+if(move>0.003 && ema9<ema21 && last.c<prev.l){signal="SELL";cls="sell";}
 
- let signal="NO TRADE", cls="", score=0;
- let valid=true;
-
-// FILTER
-let move=Math.abs(last.close-prev.low)/last.close;
-if(move<0.002 || (rsi5>45 && rsi5<55)){
- valid=false;
-}
-
-// SCORE LOGIC
-if(ema9>ema21) score+=25;
-if(last.close>prev.high) score+=25;
-if(rsi5>55) score+=15;
-if(move>0.005) score+=15;
-
-// SIGNAL
-if(valid && score>=60){
- signal = last.close>prev.high ? "BUY" : "SELL";
- cls = signal==="BUY"?"buy":"sell";
-}
-
-// ENTRY
-let entry=last.close;
-let sl = signal==="BUY"? entry*0.99 : entry*1.01;
-let tp = signal==="BUY"? entry*1.02 : entry*0.98;
-
-let hold="No Trade";
-if(signal!=="NO TRADE"){
- hold = move>0.01?"5–15 min":"15–60 min";
-}
+let entry=last.c;
+let sl=signal==="BUY"?entry*0.99:entry*1.01;
+let tp=signal==="BUY"?entry*1.03:entry*0.97;
 
 autoSignal.innerHTML=`
 <span class="${cls}">${signal}</span><br>
 Entry: ${entry.toFixed(6)}<br>
 SL: ${sl.toFixed(6)}<br>
-TP: ${tp.toFixed(6)}<br>
-Hold: ${hold}<br>
-Score: ${score}/100
+TP: ${tp.toFixed(6)}
 `;
 
 // ===== MTF =====
 function trend(arr){
- return ema(arr.map(c=>c.close).slice(-30),9) > ema(arr.map(c=>c.close).slice(-30),21);
+ return ema(arr.map(x=>x.c).slice(-30),9)>ema(arr.map(x=>x.c).slice(-30),21);
 }
 
-let t15=trend(c15);
-let t1h=trend(c1h);
-let t4h=trend(c4h);
-let t1d=trend(c1d);
-
-let mtfType="MIXED";
-if(t15 && t1h && t4h && t1d) mtfType="STRONG BUY";
-else if(!t15 && !t1h && !t4h && !t1d) mtfType="STRONG SELL";
-else if(t15 && t1h) mtfType="SHORT TERM BUY";
-else if(!t15 && !t1h) mtfType="SHORT TERM SELL";
+let t15=trend(c15),t1h=trend(c1h),t4h=trend(c4h),t1d=trend(c1d);
 
 mtfSignal.innerHTML=`
-${t15?"🟢":"🔴"} 15m  
-${t1h?"🟢":"🔴"} 1H  
-${t4h?"🟢":"🔴"} 4H  
-${t1d?"🟢":"🔴"} 1D<br><br>
-<b>${mtfType}</b>
+${t15?"🟢":"🔴"} ${t1h?"🟢":"🔴"} ${t4h?"🟢":"🔴"} ${t1d?"🟢":"🔴"}
 `;
 
-// ===== AI ENGINE =====
-let aiScore = score;
+// ===== AI =====
+let ai=0;
+if(t15)ai+=15;if(t1h)ai+=25;if(t4h)ai+=30;if(t1d)ai+=30;
+if(signal==="BUY"||signal==="SELL")ai+=10;
 
-if(mtfType.includes("STRONG")) aiScore+=20;
-if(mtfType.includes("SHORT")) aiScore+=10;
-if(!valid) aiScore-=30;
-
-let confidence = Math.min(100, aiScore);
-
-let advice="WAIT";
-
-if(confidence>75 && signal!=="NO TRADE") advice="ENTER NOW";
-else if(confidence>60) advice="GOOD SETUP";
-else if(confidence>40) advice="WEAK SETUP";
-else advice="AVOID";
+let advice=ai>75?"ENTER":ai>60?"GOOD":ai>40?"WEAK":"AVOID";
 
 aiSignal.innerHTML=`
-<span class="ai">AI Confidence: ${confidence}%</span><br>
-Trade Quality: ${confidence>75?"High":confidence>50?"Medium":"Low"}<br>
+<span class="ai">Confidence: ${ai}%</span><br>
 Advice: ${advice}
 `;
 
+// ===== SNIPER =====
+let body=Math.abs(last.c-last.l);
+let range=last.h-last.l;
+
+let sniperReady = (body/range)>0.6 && move>0.004;
+
+sniper.innerHTML=sniperReady?"🎯 READY":"⏳ WAIT";
+
+// ===== LIQUIDITY =====
+let stopHunt = last.h>prev.h && last.c<prev.h;
+liquidityBox.innerHTML=stopHunt?"⚠️ STOP HUNT":"Clean Move";
+
+// ===== SPOT HOLD AI =====
+function strength(t){return t?1:0}
+
+let holdScore = strength(t15)+strength(t1h)*2+strength(t4h)*3+strength(t1d)*4;
+
+let holdText="Avoid";
+
+if(holdScore>=7) holdText="Best: 4H → 1D+";
+else if(holdScore>=4) holdText="Good: 1H → 4H";
+else if(holdScore>=2) holdText="Short: 15m → 1H";
+
+spotAI.innerHTML=holdText;
+
+// ===== ALERT =====
+if(ai>80 && sniperReady){
+ alert("🚨 HIGH PROBABILITY TRADE");
 }
 
-// REFRESH
-function refresh(){
- location.reload();
 }
+
+function refresh(){location.reload();}
 
 init();
 
