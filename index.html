@@ -2,7 +2,7 @@
 <html>
 <head>
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Trading System</title>
+<title>Ultimate Trading Dashboard</title>
 <script src="https://s3.tradingview.com/tv.js"></script>
 
 <style>
@@ -24,11 +24,11 @@ button { background:#238636; }
 
 <div class="container">
 
-<h2>🚀 Trading System</h2>
+<h2>🚀 Ultimate Trading Dashboard</h2>
 
 <!-- SYMBOL -->
 <div class="card">
-<input id="symbolInput" placeholder="BTCUSDT / ETHUSDT">
+<input id="symbolInput" placeholder="BTCUSDT / ETHUSDT / SHIBUSDT">
 <button onclick="init()">Load</button>
 </div>
 
@@ -42,13 +42,7 @@ button { background:#238636; }
 <div id="autoSignal">Waiting...</div>
 </div>
 
-<!-- SMART MONEY -->
-<div class="card">
-<h3>🧠 Smart Money (BOS + OB)</h3>
-<div id="smartMoney">Waiting...</div>
-</div>
-
-<!-- MANUAL -->
+<!-- MANUAL CHECKLIST -->
 <div class="card">
 <h3>🧠 Manual Predictor</h3>
 
@@ -72,8 +66,8 @@ button { background:#238636; }
 </select>
 
 <button onclick="manualCheck()">Check</button>
-<div id="manualResult">Waiting...</div>
 
+<div id="manualResult">Waiting...</div>
 </div>
 
 <!-- ORDER BOOK -->
@@ -131,7 +125,7 @@ async function fetchOrderBook(){
  orderbook.innerHTML=`Bid: ${d.bids[0][0]} | Ask: ${d.asks[0][0]}`;
 }
 
-// ================= FETCH CANDLES =================
+// ================= CANDLES =================
 async function getCandles(tf){
  let res=await fetch(`https://api.binance.com/api/v3/klines?symbol=${symbol}&interval=${tf}&limit=100`);
  let d=await res.json();
@@ -157,7 +151,7 @@ function rsi(arr){
  return 100-(100/(1+rs));
 }
 
-// ================= ENGINE =================
+// ================= AUTO ENGINE =================
 async function loadData(){
 
  let c5 = await getCandles("5m");
@@ -178,22 +172,22 @@ async function loadData(){
  let last=c5[c5.length-1];
  let prev=c5[c5.length-2];
 
- let score=0, signal="NO TRADE", cls="";
+ let signal="NO TRADE",cls="",score=0;
 
-// ===== NO TRADE =====
+// NO TRADE ZONE
 if(rsi5>45 && rsi5<55){
  autoSignal.innerHTML=`<span class="warn">NO TRADE (Sideways)</span>`;
  return;
 }
 
-// ===== VOLUME =====
+// VOLUME
 let avgVol = vol5.slice(-10).reduce((a,b)=>a+b,0)/10;
 let volSpike = last.volume > avgVol;
 
-// ===== LIQUIDITY =====
+// LIQUIDITY
 let liquidity = last.high>prev.high && last.close<prev.high;
 
-// ===== SCORE =====
+// SCORE
 if(ema5>ema5s) score+=20;
 if(ema15>ema5s) score+=20;
 if(ema1h>ema5s) score+=20;
@@ -201,13 +195,13 @@ if(last.close>prev.high) score+=20;
 if(volSpike) score+=10;
 if(rsi5>60||rsi5<40) score+=10;
 
-// ===== SIGNAL =====
+// SIGNAL
 if(score>70){
- signal = last.close>prev.high ? "BUY" : "SELL";
+ signal = last.close>prev.high?"BUY":"SELL";
  cls = signal==="BUY"?"buy":"sell";
 }
 
-// ===== ENTRY =====
+// ENTRY
 let entry=last.close;
 let sl = signal==="BUY"?prev.low:prev.high;
 let tp = signal==="BUY"?entry+(entry-sl)*2:entry-(sl-entry)*2;
@@ -224,27 +218,6 @@ Score: ${score}/100<br>
 ${volSpike?"📊 Volume Spike<br>":""}
 ${liquidity?"💧 Liquidity Sweep<br>":""}
 `;
-
-// ===== BOS =====
-let bos="None";
-if(last.high>prev.high) bos="Bullish BOS";
-else if(last.low<prev.low) bos="Bearish BOS";
-
-// ===== OB =====
-let ob="N/A";
-if(bos==="Bullish BOS"){
- ob = prev.low.toFixed(2)+" - "+prev.close.toFixed(2);
-}
-if(bos==="Bearish BOS"){
- ob = prev.close.toFixed(2)+" - "+prev.high.toFixed(2);
-}
-
-smartMoney.innerHTML=`
-BOS: ${bos}<br>
-Order Block: ${ob}<br>
-Action: Wait for pullback
-`;
-
 }
 
 // ================= MANUAL =================
