@@ -2,7 +2,7 @@
 <html>
 <head>
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Smart Trading System</title>
+<title>Advanced Trading System</title>
 <script src="https://s3.tradingview.com/tv.js"></script>
 
 <style>
@@ -23,7 +23,7 @@ button { background:#238636; }
 
 <div class="container">
 
-<h2>🚀 Smart Trading System</h2>
+<h2>🚀 Advanced Trading System</h2>
 
 <div class="card">
 <input id="symbolInput" placeholder="BTCUSDT / SHIBUSDT">
@@ -35,8 +35,18 @@ button { background:#238636; }
 <div class="card">📡 Price: <span id="price">-</span></div>
 
 <div class="card">
-<h3>🧠 Smart Signal</h3>
-<div id="signal">Waiting...</div>
+<h3>🎯 Precision Signal</h3>
+<div id="precision">Waiting...</div>
+</div>
+
+<div class="card">
+<h3>🧠 Trend Classification</h3>
+<div id="trend">Waiting...</div>
+</div>
+
+<div class="card">
+<h3>⚡ Final Decision</h3>
+<div id="decision">Waiting...</div>
 </div>
 
 <button onclick="refresh()">🔄 Refresh</button>
@@ -67,96 +77,126 @@ function init(){
  setInterval(loadData,5000);
 }
 
-// ================= WS =================
+// WS
 function startWS(){
  if(ws) ws.close();
-
  ws=new WebSocket(`wss://stream.binance.com:9443/ws/${symbol.toLowerCase()}@trade`);
-
  ws.onmessage=e=>{
   let d=JSON.parse(e.data);
   price.innerText=parseFloat(d.p);
  };
 }
 
-// ================= FETCH =================
+// FETCH
 async function getCandles(tf){
  let res=await fetch(`https://api.binance.com/api/v3/klines?symbol=${symbol}&interval=${tf}&limit=100`);
  let d=await res.json();
  return d.map(x=>({
-  high:+x[2], low:+x[3], close:+x[4]
+  high:+x[2], low:+x[3], close:+x[4], volume:+x[5]
  }));
 }
 
-// ================= EMA =================
+// EMA
 function ema(arr,p){
  let k=2/(p+1),e=arr[0];
  for(let i=1;i<arr.length;i++){e=arr[i]*k+e*(1-k)}
  return e;
 }
 
-// ================= ANALYSIS =================
+// RSI
+function rsi(arr){
+ let g=0,l=0;
+ for(let i=1;i<arr.length;i++){
+  let d=arr[i]-arr[i-1];
+  if(d>0)g+=d; else l-=d;
+ }
+ let rs=g/(l||1);
+ return 100-(100/(1+rs));
+}
+
+// MAIN
 async function loadData(){
 
- let tf15 = await getCandles("15m");
- let tf1h = await getCandles("1h");
- let tf4h = await getCandles("4h");
- let tf1d = await getCandles("1d");
+ let c5 = await getCandles("5m");
+ let c15 = await getCandles("15m");
+ let c1h = await getCandles("1h");
+ let c4h = await getCandles("4h");
+ let c1d = await getCandles("1d");
 
- let close15 = tf15.map(c=>c.close);
- let close1h = tf1h.map(c=>c.close);
- let close4h = tf4h.map(c=>c.close);
- let close1d = tf1d.map(c=>c.close);
+// ===== PRECISION ENGINE =====
+let close5 = c5.map(c=>c.close);
+let vol5 = c5.map(c=>c.volume);
 
-// TREND COLORS
-function trend(arr){
- return ema(arr.slice(-30),9) > ema(arr.slice(-30),21);
+let ema9 = ema(close5.slice(-30),9);
+let ema21 = ema(close5.slice(-30),21);
+let rsi5 = rsi(close5.slice(-14));
+
+let last=c5[c5.length-1];
+let prev=c5[c5.length-2];
+
+let precisionSignal="NO TRADE", pCls="";
+
+// filters
+let move = Math.abs(last.close-prev.low)/last.close;
+if(move < 0.002 || (rsi5>45 && rsi5<55)){
+ precision.innerHTML=`<span class="warn">NO TRADE</span>`;
+ return;
 }
 
-let t15 = trend(close15);
-let t1h = trend(close1h);
-let t4h = trend(close4h);
-let t1d = trend(close1d);
+let isBuy = ema9>ema21 && last.close>prev.high;
+let isSell = ema9<ema21 && last.close<prev.low;
 
-// SIGNAL TYPE
-let type="NO TRADE", cls="", hold="";
+if(isBuy){precisionSignal="BUY"; pCls="buy";}
+if(isSell){precisionSignal="SELL"; pCls="sell";}
 
-if(t15 && t1h && t4h && t1d){
- type="STRONG BUY"; cls="buy"; hold="Hours → Days";
-}
-else if(!t15 && !t1h && !t4h && !t1d){
- type="STRONG SELL"; cls="sell"; hold="Hours → Days";
-}
-else if(t15 && t1h){
- type="SHORT TERM BUY"; cls="buy"; hold="5–60 min";
-}
-else if(!t15 && !t1h){
- type="SHORT TERM SELL"; cls="sell"; hold="5–60 min";
-}
+// SL TP %
+let entry=last.close;
+let sl = isBuy? entry*0.99 : entry*1.01;
+let tp = isBuy? entry*1.02 : entry*0.98;
 
-// ENTRY ZONE
-let last = tf15[tf15.length-1];
-let prev = tf15[tf15.length-2];
-
-let entryLow = prev.low;
-let entryHigh = prev.high;
-
-// OUTPUT
-signal.innerHTML=`
-<span class="${cls}">${type}</span><br><br>
-
-15m: ${t15?"🟢":"🔴"}  
-1H: ${t1h?"🟢":"🔴"}  
-4H: ${t4h?"🟢":"🔴"}  
-1D: ${t1d?"🟢":"🔴"}<br><br>
-
-Entry Zone: ${entryLow.toFixed(6)} – ${entryHigh.toFixed(6)}<br>
-Hold: ${hold}
+precision.innerHTML=`
+<span class="${pCls}">${precisionSignal}</span><br>
+Entry: ${entry.toFixed(6)}<br>
+SL: ${sl.toFixed(6)}<br>
+TP: ${tp.toFixed(6)}
 `;
 
+// ===== TREND ENGINE =====
+function trend(arr){
+ return ema(arr.map(c=>c.close).slice(-30),9) > ema(arr.map(c=>c.close).slice(-30),21);
 }
 
-// ================= REFRESH =================
+let t15=trend(c15), t1h=trend(c1h), t4h=trend(c4h), t1d=trend(c1d);
+
+let trendType="MIXED", tCls="warn";
+
+if(t15 && t1h && t4h && t1d){trendType="STRONG BUY"; tCls="buy";}
+else if(!t15 && !t1h && !t4h && !t1d){trendType="STRONG SELL"; tCls="sell";}
+else if(t15 && t1h){trendType="SHORT TERM BUY"; tCls="buy";}
+else if(!t15 && !t1h){trendType="SHORT TERM SELL"; tCls="sell";}
+
+trend.innerHTML=`
+<span class="${tCls}">${trendType}</span><br>
+15m:${t15?"🟢":"🔴"} 1H:${t1h?"🟢":"🔴"} 4H:${t4h?"🟢":"🔴"} 1D:${t1d?"🟢":"🔴"}
+`;
+
+// ===== FINAL DECISION =====
+let final="NO TRADE";
+
+if(precisionSignal==="BUY" && trendType.includes("BUY")){
+ final="TAKE BUY (CONFIRMED)";
+}
+else if(precisionSignal==="SELL" && trendType.includes("SELL")){
+ final="TAKE SELL (CONFIRMED)";
+}
+else if(precisionSignal!=="NO TRADE"){
+ final="SCALP ONLY";
+}
+
+decision.innerHTML=final;
+
+}
+
 function refresh(){
  location.reload();
 }
