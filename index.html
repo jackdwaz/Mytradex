@@ -2,14 +2,14 @@
 <html>
 <head>
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Ultimate Trading Dashboard</title>
+<title>Trading Dashboard PRO</title>
 <script src="https://s3.tradingview.com/tv.js"></script>
 
 <style>
 body { background:#0d1117; color:#fff; font-family:sans-serif; margin:0; }
 .container { max-width:420px; margin:auto; padding:10px; }
 .card { background:#161b22; padding:12px; border-radius:10px; margin-bottom:10px; }
-input,select,button {
+input,button {
     width:100%; padding:10px; margin:5px 0;
     border:none; border-radius:8px; background:#0d1117; color:#fff;
 }
@@ -24,11 +24,10 @@ button { background:#238636; }
 
 <div class="container">
 
-<h2>🚀 Ultimate Trading Dashboard</h2>
+<h2>🚀 Trading Dashboard PRO</h2>
 
-<!-- SYMBOL -->
 <div class="card">
-<input id="symbolInput" placeholder="BTCUSDT / ETHUSDT / SHIBUSDT">
+<input id="symbolInput" placeholder="BTCUSDT / SHIBUSDT">
 <button onclick="init()">Load</button>
 </div>
 
@@ -36,41 +35,11 @@ button { background:#238636; }
 
 <div class="card">📡 Price: <span id="price">-</span></div>
 
-<!-- AUTO SIGNAL -->
 <div class="card">
 <h3>🤖 Auto Signal</h3>
 <div id="autoSignal">Waiting...</div>
 </div>
 
-<!-- MANUAL CHECKLIST -->
-<div class="card">
-<h3>🧠 Manual Predictor</h3>
-
-<select id="day">
-<option value="up">Day ↑</option>
-<option value="down">Day ↓</option>
-</select>
-
-<select id="h4">
-<option value="up">4H ↑</option>
-<option value="down">4H ↓</option>
-<option value="divup">4H Divergence ↑</option>
-<option value="divdown">4H Divergence ↓</option>
-</select>
-
-<select id="h1">
-<option value="up">1H ↑</option>
-<option value="down">1H ↓</option>
-<option value="divup">1H Divergence ↑</option>
-<option value="divdown">1H Divergence ↓</option>
-</select>
-
-<button onclick="manualCheck()">Check</button>
-
-<div id="manualResult">Waiting...</div>
-</div>
-
-<!-- ORDER BOOK -->
 <div class="card">
 <h3>📊 Order Book</h3>
 <div id="orderbook">-</div>
@@ -85,7 +54,6 @@ button { background:#238636; }
 let symbol="BTCUSDT";
 let ws;
 
-// ================= INIT =================
 function init(){
  symbol=document.getElementById("symbolInput").value.toUpperCase()||"BTCUSDT";
 
@@ -114,7 +82,7 @@ function startWS(){
 
  ws.onmessage=e=>{
   let d=JSON.parse(e.data);
-  price.innerText=parseFloat(d.p).toFixed(2);
+  price.innerText=parseFloat(d.p);
  };
 }
 
@@ -125,7 +93,7 @@ async function fetchOrderBook(){
  orderbook.innerHTML=`Bid: ${d.bids[0][0]} | Ask: ${d.asks[0][0]}`;
 }
 
-// ================= CANDLES =================
+// ================= FETCH =================
 async function getCandles(tf){
  let res=await fetch(`https://api.binance.com/api/v3/klines?symbol=${symbol}&interval=${tf}&limit=100`);
  let d=await res.json();
@@ -151,87 +119,68 @@ function rsi(arr){
  return 100-(100/(1+rs));
 }
 
-// ================= AUTO ENGINE =================
+// ================= ENGINE =================
 async function loadData(){
 
  let c5 = await getCandles("5m");
- let c15 = await getCandles("15m");
- let c1h = await getCandles("1h");
-
  let close5 = c5.map(c=>c.close);
  let vol5 = c5.map(c=>c.volume);
 
- let ema5 = ema(close5.slice(-30),9);
- let ema5s = ema(close5.slice(-30),21);
-
- let ema15 = ema(c15.map(c=>c.close).slice(-30),9);
- let ema1h = ema(c1h.map(c=>c.close).slice(-30),9);
+ let ema9 = ema(close5.slice(-30),9);
+ let ema21 = ema(close5.slice(-30),21);
 
  let rsi5 = rsi(close5.slice(-14));
 
  let last=c5[c5.length-1];
  let prev=c5[c5.length-2];
 
- let signal="NO TRADE",cls="",score=0;
-
-// NO TRADE ZONE
+// NO TRADE
 if(rsi5>45 && rsi5<55){
  autoSignal.innerHTML=`<span class="warn">NO TRADE (Sideways)</span>`;
  return;
 }
 
-// VOLUME
-let avgVol = vol5.slice(-10).reduce((a,b)=>a+b,0)/10;
-let volSpike = last.volume > avgVol;
+// DISTANCE
+let move = Math.abs(last.close - prev.low);
+let percentMove = move / last.close;
 
-// LIQUIDITY
-let liquidity = last.high>prev.high && last.close<prev.high;
-
-// SCORE
-if(ema5>ema5s) score+=20;
-if(ema15>ema5s) score+=20;
-if(ema1h>ema5s) score+=20;
-if(last.close>prev.high) score+=20;
-if(volSpike) score+=10;
-if(rsi5>60||rsi5<40) score+=10;
+// FILTER SMALL MOVES
+if(percentMove < 0.002){
+ autoSignal.innerHTML=`<span class="warn">NO TRADE (Low Movement)</span>`;
+ return;
+}
 
 // SIGNAL
-if(score>70){
- signal = last.close>prev.high?"BUY":"SELL";
- cls = signal==="BUY"?"buy":"sell";
+let isBuy = ema9 > ema21 && last.close > prev.high;
+let isSell = ema9 < ema21 && last.close < prev.low;
+
+if(!isBuy && !isSell){
+ autoSignal.innerHTML=`NO TRADE`;
+ return;
 }
 
 // ENTRY
-let entry=last.close;
-let sl = signal==="BUY"?prev.low:prev.high;
-let tp = signal==="BUY"?entry+(entry-sl)*2:entry-(sl-entry)*2;
+let entry = last.close;
 
-let hold = (last.high-last.low)>50?"5–15 min":"15–60 min";
+// SL (1% minimum)
+let sl = isBuy ? entry * 0.99 : entry * 1.01;
 
+// TP (2%)
+let tp = isBuy ? entry * 1.02 : entry * 0.98;
+
+// HOLD
+let hold = percentMove > 0.01 ? "5–15 min" : "15–60 min";
+
+// OUTPUT
 autoSignal.innerHTML=`
-<span class="${cls}">${signal}</span><br>
-Entry: ${entry.toFixed(2)}<br>
-SL: ${sl.toFixed(2)}<br>
-TP: ${tp.toFixed(2)}<br>
+<span class="${isBuy?"buy":"sell"}">${isBuy?"BUY":"SELL"}</span><br>
+Entry: ${entry.toFixed(6)}<br>
+SL: ${sl.toFixed(6)}<br>
+TP: ${tp.toFixed(6)}<br>
 Hold: ${hold}<br>
-Score: ${score}/100<br>
-${volSpike?"📊 Volume Spike<br>":""}
-${liquidity?"💧 Liquidity Sweep<br>":""}
+RR: 1:2
 `;
-}
 
-// ================= MANUAL =================
-function manualCheck(){
-
-let d=day.value,h4v=h4.value,h1v=h1.value;
-let result="NO TRADE",cls="";
-
-if(d==="up"&&h4v==="up"&&h1v==="up"){result="STRONG BUY";cls="buy";}
-else if(d==="down"&&h4v==="down"&&h1v==="down"){result="STRONG SELL";cls="sell";}
-else if(d==="up"&&h4v==="down"&&h1v==="divup"){result="PULLBACK BUY";cls="buy";}
-else if(d==="down"&&h4v==="up"&&h1v==="divdown"){result="PULLBACK SELL";cls="sell";}
-
-manualResult.innerHTML=`<span class="${cls}">${result}</span>`;
 }
 
 // ================= REFRESH =================
@@ -242,6 +191,5 @@ function refresh(){
 init();
 
 </script>
-
 </body>
 </html>
