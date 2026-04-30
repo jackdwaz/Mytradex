@@ -2,7 +2,7 @@
 <html>
 <head>
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Pro Trading Dashboard</title>
+<title>Ultimate Trading System PRO+</title>
 <script src="https://s3.tradingview.com/tv.js"></script>
 
 <style>
@@ -21,10 +21,12 @@ button { background:#238636; }
 </head>
 
 <body>
+
 <div class="container">
 
-<h2>🚀 Pro Trading Dashboard</h2>
+<h2>🚀 Ultimate Trading System PRO+</h2>
 
+<!-- SYMBOL -->
 <div class="card">
 <input id="symbolInput" placeholder="BTCUSDT / ETHUSDT">
 <button onclick="init()">Load</button>
@@ -34,11 +36,47 @@ button { background:#238636; }
 
 <div class="card">📡 Price: <span id="price">-</span></div>
 
+<!-- AUTO SIGNAL -->
 <div class="card">
 <h3>🤖 Auto Signal</h3>
 <div id="autoSignal">Waiting...</div>
 </div>
 
+<!-- SMART MONEY -->
+<div class="card">
+<h3>🧠 Smart Money (BOS + OB)</h3>
+<div id="smartMoney">Waiting...</div>
+</div>
+
+<!-- MANUAL -->
+<div class="card">
+<h3>🧠 Manual Predictor</h3>
+
+<select id="day">
+<option value="up">Day ↑</option>
+<option value="down">Day ↓</option>
+</select>
+
+<select id="h4">
+<option value="up">4H ↑</option>
+<option value="down">4H ↓</option>
+<option value="divup">4H Divergence ↑</option>
+<option value="divdown">4H Divergence ↓</option>
+</select>
+
+<select id="h1">
+<option value="up">1H ↑</option>
+<option value="down">1H ↓</option>
+<option value="divup">1H Divergence ↑</option>
+<option value="divdown">1H Divergence ↓</option>
+</select>
+
+<button onclick="manualCheck()">Check</button>
+<div id="manualResult">Waiting...</div>
+
+</div>
+
+<!-- ORDER BOOK -->
 <div class="card">
 <h3>📊 Order Book</h3>
 <div id="orderbook">-</div>
@@ -93,7 +131,7 @@ async function fetchOrderBook(){
  orderbook.innerHTML=`Bid: ${d.bids[0][0]} | Ask: ${d.asks[0][0]}`;
 }
 
-// ================= CANDLES =================
+// ================= FETCH CANDLES =================
 async function getCandles(tf){
  let res=await fetch(`https://api.binance.com/api/v3/klines?symbol=${symbol}&interval=${tf}&limit=100`);
  let d=await res.json();
@@ -140,12 +178,11 @@ async function loadData(){
  let last=c5[c5.length-1];
  let prev=c5[c5.length-2];
 
- let signal="NO TRADE",cls="",msg="";
- let score=0;
+ let score=0, signal="NO TRADE", cls="";
 
-// ===== NO TRADE ZONE =====
+// ===== NO TRADE =====
 if(rsi5>45 && rsi5<55){
- autoSignal.innerHTML=`<span class="warn">NO TRADE (Sideways Market)</span>`;
+ autoSignal.innerHTML=`<span class="warn">NO TRADE (Sideways)</span>`;
  return;
 }
 
@@ -153,38 +190,29 @@ if(rsi5>45 && rsi5<55){
 let avgVol = vol5.slice(-10).reduce((a,b)=>a+b,0)/10;
 let volSpike = last.volume > avgVol;
 
-// ===== LIQUIDITY SWEEP =====
-let liquiditySweep = last.high > prev.high && last.close < prev.high;
+// ===== LIQUIDITY =====
+let liquidity = last.high>prev.high && last.close<prev.high;
 
-// ===== TREND =====
-if(ema5>ema5s){score+=20;}
-if(ema15>ema5s){score+=20;}
-if(ema1h>ema5s){score+=20;}
+// ===== SCORE =====
+if(ema5>ema5s) score+=20;
+if(ema15>ema5s) score+=20;
+if(ema1h>ema5s) score+=20;
+if(last.close>prev.high) score+=20;
+if(volSpike) score+=10;
+if(rsi5>60||rsi5<40) score+=10;
 
-// ===== BREAKOUT =====
-if(last.close>prev.high){score+=20;}
-if(last.close<prev.low){score+=20;}
-
-// ===== RSI =====
-if(rsi5>60||rsi5<40){score+=10;}
-
-// ===== VOLUME =====
-if(volSpike){score+=10;}
-
-// ===== FINAL SIGNAL =====
+// ===== SIGNAL =====
 if(score>70){
  signal = last.close>prev.high ? "BUY" : "SELL";
  cls = signal==="BUY"?"buy":"sell";
 }
 
-// ENTRY / SL / TP
+// ===== ENTRY =====
 let entry=last.close;
 let sl = signal==="BUY"?prev.low:prev.high;
 let tp = signal==="BUY"?entry+(entry-sl)*2:entry-(sl-entry)*2;
 
-// HOLD
-let range=last.high-last.low;
-let hold = range>50?"5–15 min":range>20?"15–60 min":"1–3 hr";
+let hold = (last.high-last.low)>50?"5–15 min":"15–60 min";
 
 autoSignal.innerHTML=`
 <span class="${cls}">${signal}</span><br>
@@ -194,9 +222,43 @@ TP: ${tp.toFixed(2)}<br>
 Hold: ${hold}<br>
 Score: ${score}/100<br>
 ${volSpike?"📊 Volume Spike<br>":""}
-${liquiditySweep?"💧 Liquidity Sweep Detected<br>":""}
+${liquidity?"💧 Liquidity Sweep<br>":""}
 `;
 
+// ===== BOS =====
+let bos="None";
+if(last.high>prev.high) bos="Bullish BOS";
+else if(last.low<prev.low) bos="Bearish BOS";
+
+// ===== OB =====
+let ob="N/A";
+if(bos==="Bullish BOS"){
+ ob = prev.low.toFixed(2)+" - "+prev.close.toFixed(2);
+}
+if(bos==="Bearish BOS"){
+ ob = prev.close.toFixed(2)+" - "+prev.high.toFixed(2);
+}
+
+smartMoney.innerHTML=`
+BOS: ${bos}<br>
+Order Block: ${ob}<br>
+Action: Wait for pullback
+`;
+
+}
+
+// ================= MANUAL =================
+function manualCheck(){
+
+let d=day.value,h4v=h4.value,h1v=h1.value;
+let result="NO TRADE",cls="";
+
+if(d==="up"&&h4v==="up"&&h1v==="up"){result="STRONG BUY";cls="buy";}
+else if(d==="down"&&h4v==="down"&&h1v==="down"){result="STRONG SELL";cls="sell";}
+else if(d==="up"&&h4v==="down"&&h1v==="divup"){result="PULLBACK BUY";cls="buy";}
+else if(d==="down"&&h4v==="up"&&h1v==="divdown"){result="PULLBACK SELL";cls="sell";}
+
+manualResult.innerHTML=`<span class="${cls}">${result}</span>`;
 }
 
 // ================= REFRESH =================
