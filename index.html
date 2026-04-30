@@ -17,6 +17,20 @@ button { background:#238636; }
 .buy{color:#00ff9f;} .sell{color:#ff4d4d;}
 .warn{color:#ffaa00;} .ai{color:#00c3ff;}
 #chart { height:300px; }
+
+/* ALERT BOX */
+.alertBox{
+ position:fixed;
+ bottom:20px;
+ left:50%;
+ transform:translateX(-50%);
+ background:#00ff9f;
+ color:#000;
+ padding:12px 20px;
+ border-radius:10px;
+ font-weight:bold;
+ z-index:9999;
+}
 </style>
 </head>
 
@@ -50,6 +64,9 @@ button { background:#238636; }
 
 let symbol = localStorage.getItem("symbol") || "BTCUSDT";
 let ws;
+
+// ✅ ALERT CONTROL
+let lastAlertSignal = "";
 
 // INIT
 function init(){
@@ -95,6 +112,15 @@ function ema(a,p){
  return e;
 }
 
+// ALERT UI
+function showAlert(msg){
+ let box = document.createElement("div");
+ box.className="alertBox";
+ box.innerText = msg;
+ document.body.appendChild(box);
+ setTimeout(()=>box.remove(),3000);
+}
+
 // MAIN
 async function loadData(){
 
@@ -136,43 +162,33 @@ function trend(arr){
 
 let t15=trend(c15),t1h=trend(c1h),t4h=trend(c4h),t1d=trend(c1d);
 
-let mtfType = "MIXED";
-let mtfAdvice = "Avoid Trade";
+let mtfType="MIXED", mtfAdvice="Avoid Trade";
 
-// Decision Logic
 if(t15 && t1h && t4h && t1d){
- mtfType = "STRONG BUY";
- mtfAdvice = "Hold: Hours → Days";
+ mtfType="STRONG BUY"; mtfAdvice="Hold: Hours → Days";
 }
 else if(!t15 && !t1h && !t4h && !t1d){
- mtfType = "STRONG SELL";
- mtfAdvice = "Hold: Hours → Days";
+ mtfType="STRONG SELL"; mtfAdvice="Hold: Hours → Days";
 }
 else if(t15 && t1h){
- mtfType = "SHORT TERM BUY";
- mtfAdvice = "Hold: 5–60 min";
+ mtfType="SHORT TERM BUY"; mtfAdvice="Hold: 5–60 min";
 }
 else if(!t15 && !t1h){
- mtfType = "SHORT TERM SELL";
- mtfAdvice = "Hold: 5–60 min";
+ mtfType="SHORT TERM SELL"; mtfAdvice="Hold: 5–60 min";
 }
 
-// OUTPUT (CLEAN UI)
-mtfSignal.innerHTML = `
+mtfSignal.innerHTML=`
 <b>15m:</b> ${t15?"🟢":"🔴"}<br>
 <b>1H:</b> ${t1h?"🟢":"🔴"}<br>
 <b>4H:</b> ${t4h?"🟢":"🔴"}<br>
 <b>1D:</b> ${t1d?"🟢":"🔴"}<br><br>
-
-<b>${mtfType}</b><br>
-${mtfAdvice}
+<b>${mtfType}</b><br>${mtfAdvice}
 `;
-    
 
 // ===== AI =====
 let ai=0;
 if(t15)ai+=15;if(t1h)ai+=25;if(t4h)ai+=30;if(t1d)ai+=30;
-if(signal==="BUY"||signal==="SELL")ai+=10;
+if(signal!=="NO TRADE")ai+=10;
 
 let advice=ai>75?"ENTER":ai>60?"GOOD":ai>40?"WEAK":"AVOID";
 
@@ -184,37 +200,36 @@ Advice: ${advice}
 // ===== SNIPER =====
 let body=Math.abs(last.c-last.l);
 let range=last.h-last.l;
-
-let sniperReady = (body/range)>0.6 && move>0.004;
+let sniperReady=(body/range)>0.6 && move>0.004;
 
 sniper.innerHTML=sniperReady?"🎯 READY":"⏳ WAIT";
 
 // ===== LIQUIDITY =====
-let stopHunt = last.h>prev.h && last.c<prev.h;
+let stopHunt=last.h>prev.h && last.c<prev.h;
 liquidityBox.innerHTML=stopHunt?"⚠️ STOP HUNT":"Clean Move";
 
-// ===== SPOT HOLD AI =====
+// ===== SPOT HOLD =====
 function strength(t){return t?1:0}
-
-let holdScore = strength(t15)+strength(t1h)*2+strength(t4h)*3+strength(t1d)*4;
+let holdScore=strength(t15)+strength(t1h)*2+strength(t4h)*3+strength(t1d)*4;
 
 let holdText="Avoid";
-
 if(holdScore>=7) holdText="Best: 4H → 1D+";
 else if(holdScore>=4) holdText="Good: 1H → 4H";
 else if(holdScore>=2) holdText="Short: 15m → 1H";
 
 spotAI.innerHTML=holdText;
 
-// ===== ALERT =====
-if(ai>80 && sniperReady){
- alert("🚨 HIGH PROBABILITY TRADE");
+// ===== ALERT FIX =====
+let currentSignal = signal + "_" + advice;
+
+if(ai>80 && sniperReady && currentSignal!==lastAlertSignal){
+ lastAlertSignal=currentSignal;
+ showAlert("🚀 High Probability Trade");
 }
 
 }
 
 function refresh(){location.reload();}
-
 init();
 
 </script>
