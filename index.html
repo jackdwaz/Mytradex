@@ -2,9 +2,9 @@
 <html>
 <head>
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Ultimate Trading System (Final Fixed)</title>
+<title>Trading System FIXED</title>
 
-<script src="https://unpkg.com/lightweight-charts/dist/lightweight-charts.standalone.production.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/lightweight-charts@4.1.1/dist/lightweight-charts.standalone.production.js"></script>
 
 <style>
 body { background:#0d1117; color:#fff; font-family:sans-serif; margin:0; }
@@ -25,7 +25,7 @@ button { background:#238636; }
 
 <div class="container">
 
-<h2>🚀 Ultimate Trading System</h2>
+<h2>🚀 Trading System</h2>
 
 <div class="card">
 <input id="symbolInput" placeholder="BTCUSDT">
@@ -42,12 +42,12 @@ button { background:#238636; }
 </div>
 
 <div class="card">
-<h3>🧠 Trend Classification</h3>
+<h3>🧠 Trend</h3>
 <div id="trend">Waiting...</div>
 </div>
 
 <div class="card">
-<h3>⚡ Final Decision</h3>
+<h3>⚡ Decision</h3>
 <div id="decision">Waiting...</div>
 </div>
 
@@ -57,18 +57,20 @@ button { background:#238636; }
 
 <script>
 
-let symbol="BTCUSDT";
-let ws;
 let chart, candleSeries;
 let entryLine, slLine, tpLine;
+let symbol="BTCUSDT";
+let ws;
 
+// INIT
 function init(){
  symbol=document.getElementById("symbolInput").value.toUpperCase()||"BTCUSDT";
 
  document.getElementById("chart").innerHTML="";
 
  chart = LightweightCharts.createChart(document.getElementById("chart"), {
-  width:380, height:300,
+  width:380,
+  height:300,
   layout:{background:{color:"#0d1117"},textColor:"#fff"}
  });
 
@@ -79,13 +81,15 @@ function init(){
  setInterval(loadData,5000);
 }
 
-// WS
+// WS PRICE
 function startWS(){
  if(ws) ws.close();
+
  ws=new WebSocket(`wss://stream.binance.com:9443/ws/${symbol.toLowerCase()}@trade`);
+
  ws.onmessage=e=>{
   let d=JSON.parse(e.data);
-  price.innerText=parseFloat(d.p);
+  price.innerText=parseFloat(d.p).toFixed(2);
  };
 }
 
@@ -93,9 +97,14 @@ function startWS(){
 async function getCandles(tf){
  let res=await fetch(`https://api.binance.com/api/v3/klines?symbol=${symbol}&interval=${tf}&limit=100`);
  let d=await res.json();
+
  return d.map(x=>({
   time:x[0]/1000,
-  open:+x[1], high:+x[2], low:+x[3], close:+x[4], volume:+x[5]
+  open:+x[1],
+  high:+x[2],
+  low:+x[3],
+  close:+x[4],
+  volume:+x[5]
  }));
 }
 
@@ -120,15 +129,15 @@ function rsi(arr){
 // MAIN
 async function loadData(){
 
- let c5 = await getCandles("5m");
- let c15 = await getCandles("15m");
- let c1h = await getCandles("1h");
- let c4h = await getCandles("4h");
- let c1d = await getCandles("1d");
+ let c5=await getCandles("5m");
+ let c15=await getCandles("15m");
+ let c1h=await getCandles("1h");
+ let c4h=await getCandles("4h");
+ let c1d=await getCandles("1d");
 
  candleSeries.setData(c5);
 
-// ===== PRECISION =====
+// PRECISION
 let close5=c5.map(c=>c.close);
 let ema9=ema(close5.slice(-30),9);
 let ema21=ema(close5.slice(-30),21);
@@ -140,7 +149,6 @@ let prev=c5[c5.length-2];
 let precisionSignal="NO TRADE", cls="";
 let valid=true;
 
-// filters
 let move=Math.abs(last.close-prev.low)/last.close;
 
 if(move<0.002 || (rsi5>45 && rsi5<55)){
@@ -148,7 +156,6 @@ if(move<0.002 || (rsi5>45 && rsi5<55)){
  valid=false;
 }
 
-// signals
 let isBuy=ema9>ema21 && last.close>prev.high;
 let isSell=ema9<ema21 && last.close<prev.low;
 
@@ -157,7 +164,6 @@ if(valid){
  if(isSell){precisionSignal="SELL"; cls="sell";}
 }
 
-// TP/SL %
 let entry=last.close;
 let sl=isBuy?entry*0.99:entry*1.01;
 let tp=isBuy?entry*1.02:entry*0.98;
@@ -175,12 +181,12 @@ if(slLine) candleSeries.removePriceLine(slLine);
 if(tpLine) candleSeries.removePriceLine(tpLine);
 
 if(precisionSignal!=="NO TRADE"){
- entryLine=candleSeries.createPriceLine({price:entry,color:"#00ff9f",title:"ENTRY"});
- slLine=candleSeries.createPriceLine({price:sl,color:"#ff4d4d",title:"SL"});
- tpLine=candleSeries.createPriceLine({price:tp,color:"#4da6ff",title:"TP"});
+ entryLine=candleSeries.createPriceLine({price:entry,color:"#00ff9f"});
+ slLine=candleSeries.createPriceLine({price:sl,color:"#ff4d4d"});
+ tpLine=candleSeries.createPriceLine({price:tp,color:"#4da6ff"});
 }
 
-// ===== TREND =====
+// TREND
 function trend(arr){
  let closes=arr.map(c=>c.close);
  return ema(closes.slice(-30),9)>ema(closes.slice(-30),21);
@@ -188,30 +194,21 @@ function trend(arr){
 
 let t15=trend(c15), t1h=trend(c1h), t4h=trend(c4h), t1d=trend(c1d);
 
-let trendType="MIXED", tCls="warn";
+let trendType="MIXED";
 
-if(t15 && t1h && t4h && t1d){trendType="STRONG BUY"; tCls="buy";}
-else if(!t15 && !t1h && !t4h && !t1d){trendType="STRONG SELL"; tCls="sell";}
-else if(t15 && t1h){trendType="SHORT TERM BUY"; tCls="buy";}
-else if(!t15 && !t1h){trendType="SHORT TERM SELL"; tCls="sell";}
+if(t15&&t1h&&t4h&&t1d) trendType="STRONG BUY";
+else if(!t15&&!t1h&&!t4h&&!t1d) trendType="STRONG SELL";
+else if(t15&&t1h) trendType="SHORT TERM BUY";
+else if(!t15&&!t1h) trendType="SHORT TERM SELL";
 
-trend.innerHTML=`
-<span class="${tCls}">${trendType}</span><br>
-15m:${t15?"🟢":"🔴"} 1H:${t1h?"🟢":"🔴"} 4H:${t4h?"🟢":"🔴"} 1D:${t1d?"🟢":"🔴"}
-`;
+trend.innerHTML=trendType;
 
-// ===== FINAL =====
+// FINAL
 let final="NO TRADE";
 
-if(precisionSignal==="BUY" && trendType.includes("BUY")){
- final="TAKE BUY";
-}
-else if(precisionSignal==="SELL" && trendType.includes("SELL")){
- final="TAKE SELL";
-}
-else if(precisionSignal!=="NO TRADE"){
- final="SCALP ONLY";
-}
+if(precisionSignal==="BUY" && trendType.includes("BUY")) final="TAKE BUY";
+else if(precisionSignal==="SELL" && trendType.includes("SELL")) final="TAKE SELL";
+else if(precisionSignal!=="NO TRADE") final="SCALP ONLY";
 
 decision.innerHTML=final;
 
