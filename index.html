@@ -2,9 +2,8 @@
 <html>
 <head>
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Trading System FIXED</title>
-
-<script src="https://cdn.jsdelivr.net/npm/lightweight-charts@4.1.1/dist/lightweight-charts.standalone.production.js"></script>
+<title>Trading Dashboard PRO</title>
+<script src="https://s3.tradingview.com/tv.js"></script>
 
 <style>
 body { background:#0d1117; color:#fff; font-family:sans-serif; margin:0; }
@@ -25,10 +24,10 @@ button { background:#238636; }
 
 <div class="container">
 
-<h2>🚀 Trading System</h2>
+<h2>🚀 Trading Dashboard PRO</h2>
 
 <div class="card">
-<input id="symbolInput" placeholder="BTCUSDT">
+<input id="symbolInput" placeholder="BTCUSDT / SHIBUSDT">
 <button onclick="init()">Load</button>
 </div>
 
@@ -37,18 +36,13 @@ button { background:#238636; }
 <div class="card">📡 Price: <span id="price">-</span></div>
 
 <div class="card">
-<h3>🎯 Precision Signal</h3>
-<div id="precision">Waiting...</div>
+<h3>🤖 Auto Signal</h3>
+<div id="autoSignal">Waiting...</div>
 </div>
 
 <div class="card">
-<h3>🧠 Trend</h3>
-<div id="trend">Waiting...</div>
-</div>
-
-<div class="card">
-<h3>⚡ Decision</h3>
-<div id="decision">Waiting...</div>
+<h3>📊 Order Book</h3>
+<div id="orderbook">-</div>
 </div>
 
 <button onclick="refresh()">🔄 Refresh</button>
@@ -57,31 +51,30 @@ button { background:#238636; }
 
 <script>
 
-let chart, candleSeries;
-let entryLine, slLine, tpLine;
 let symbol="BTCUSDT";
 let ws;
 
-// INIT
 function init(){
  symbol=document.getElementById("symbolInput").value.toUpperCase()||"BTCUSDT";
 
  document.getElementById("chart").innerHTML="";
 
- chart = LightweightCharts.createChart(document.getElementById("chart"), {
-  width:380,
-  height:300,
-  layout:{background:{color:"#0d1117"},textColor:"#fff"}
+ new TradingView.widget({
+  container_id:"chart",
+  symbol:"BINANCE:"+symbol,
+  interval:"15",
+  theme:"dark",
+  width:"100%",
+  height:300
  });
 
- candleSeries = chart.addCandlestickSeries();
-
  startWS();
+ fetchOrderBook();
  loadData();
  setInterval(loadData,5000);
 }
 
-// WS PRICE
+// ================= WEBSOCKET =================
 function startWS(){
  if(ws) ws.close();
 
@@ -89,33 +82,33 @@ function startWS(){
 
  ws.onmessage=e=>{
   let d=JSON.parse(e.data);
-  price.innerText=parseFloat(d.p).toFixed(2);
+  price.innerText=parseFloat(d.p);
  };
 }
 
-// FETCH
+// ================= ORDER BOOK =================
+async function fetchOrderBook(){
+ let res=await fetch(`https://api.binance.com/api/v3/depth?symbol=${symbol}&limit=5`);
+ let d=await res.json();
+ orderbook.innerHTML=`Bid: ${d.bids[0][0]} | Ask: ${d.asks[0][0]}`;
+}
+
+// ================= FETCH =================
 async function getCandles(tf){
  let res=await fetch(`https://api.binance.com/api/v3/klines?symbol=${symbol}&interval=${tf}&limit=100`);
  let d=await res.json();
-
  return d.map(x=>({
-  time:x[0]/1000,
-  open:+x[1],
-  high:+x[2],
-  low:+x[3],
-  close:+x[4],
-  volume:+x[5]
+  open:+x[1], high:+x[2], low:+x[3], close:+x[4], volume:+x[5]
  }));
 }
 
-// EMA
+// ================= INDICATORS =================
 function ema(arr,p){
  let k=2/(p+1),e=arr[0];
  for(let i=1;i<arr.length;i++){e=arr[i]*k+e*(1-k)}
  return e;
 }
 
-// RSI
 function rsi(arr){
  let g=0,l=0;
  for(let i=1;i<arr.length;i++){
@@ -126,94 +119,71 @@ function rsi(arr){
  return 100-(100/(1+rs));
 }
 
-// MAIN
+// ================= ENGINE =================
 async function loadData(){
 
- let c5=await getCandles("5m");
- let c15=await getCandles("15m");
- let c1h=await getCandles("1h");
- let c4h=await getCandles("4h");
- let c1d=await getCandles("1d");
+ let c5 = await getCandles("5m");
+ let close5 = c5.map(c=>c.close);
+ let vol5 = c5.map(c=>c.volume);
 
- candleSeries.setData(c5);
+ let ema9 = ema(close5.slice(-30),9);
+ let ema21 = ema(close5.slice(-30),21);
 
-// PRECISION
-let close5=c5.map(c=>c.close);
-let ema9=ema(close5.slice(-30),9);
-let ema21=ema(close5.slice(-30),21);
-let rsi5=rsi(close5.slice(-14));
+ let rsi5 = rsi(close5.slice(-14));
 
-let last=c5[c5.length-1];
-let prev=c5[c5.length-2];
+ let last=c5[c5.length-1];
+ let prev=c5[c5.length-2];
 
-let precisionSignal="NO TRADE", cls="";
-let valid=true;
-
-let move=Math.abs(last.close-prev.low)/last.close;
-
-if(move<0.002 || (rsi5>45 && rsi5<55)){
- precision.innerHTML=`<span class="warn">NO TRADE</span>`;
- valid=false;
+// NO TRADE
+if(rsi5>45 && rsi5<55){
+ autoSignal.innerHTML=`<span class="warn">NO TRADE (Sideways)</span>`;
+ return;
 }
 
-let isBuy=ema9>ema21 && last.close>prev.high;
-let isSell=ema9<ema21 && last.close<prev.low;
+// DISTANCE
+let move = Math.abs(last.close - prev.low);
+let percentMove = move / last.close;
 
-if(valid){
- if(isBuy){precisionSignal="BUY"; cls="buy";}
- if(isSell){precisionSignal="SELL"; cls="sell";}
+// FILTER SMALL MOVES
+if(percentMove < 0.002){
+ autoSignal.innerHTML=`<span class="warn">NO TRADE (Low Movement)</span>`;
+ return;
 }
 
-let entry=last.close;
-let sl=isBuy?entry*0.99:entry*1.01;
-let tp=isBuy?entry*1.02:entry*0.98;
+// SIGNAL
+let isBuy = ema9 > ema21 && last.close > prev.high;
+let isSell = ema9 < ema21 && last.close < prev.low;
 
-precision.innerHTML=`
-<span class="${cls}">${precisionSignal}</span><br>
-Entry: ${entry.toFixed(4)}<br>
-SL: ${sl.toFixed(4)}<br>
-TP: ${tp.toFixed(4)}
+if(!isBuy && !isSell){
+ autoSignal.innerHTML=`NO TRADE`;
+ return;
+}
+
+// ENTRY
+let entry = last.close;
+
+// SL (1% minimum)
+let sl = isBuy ? entry * 0.99 : entry * 1.01;
+
+// TP (2%)
+let tp = isBuy ? entry * 1.02 : entry * 0.98;
+
+// HOLD
+let hold = percentMove > 0.01 ? "5–15 min" : "15–60 min";
+
+// OUTPUT
+autoSignal.innerHTML=`
+<span class="${isBuy?"buy":"sell"}">${isBuy?"BUY":"SELL"}</span><br>
+Entry: ${entry.toFixed(6)}<br>
+SL: ${sl.toFixed(6)}<br>
+TP: ${tp.toFixed(6)}<br>
+Hold: ${hold}<br>
+RR: 1:2
 `;
 
-// DRAW LINES
-if(entryLine) candleSeries.removePriceLine(entryLine);
-if(slLine) candleSeries.removePriceLine(slLine);
-if(tpLine) candleSeries.removePriceLine(tpLine);
-
-if(precisionSignal!=="NO TRADE"){
- entryLine=candleSeries.createPriceLine({price:entry,color:"#00ff9f"});
- slLine=candleSeries.createPriceLine({price:sl,color:"#ff4d4d"});
- tpLine=candleSeries.createPriceLine({price:tp,color:"#4da6ff"});
 }
 
-// TREND
-function trend(arr){
- let closes=arr.map(c=>c.close);
- return ema(closes.slice(-30),9)>ema(closes.slice(-30),21);
-}
-
-let t15=trend(c15), t1h=trend(c1h), t4h=trend(c4h), t1d=trend(c1d);
-
-let trendType="MIXED";
-
-if(t15&&t1h&&t4h&&t1d) trendType="STRONG BUY";
-else if(!t15&&!t1h&&!t4h&&!t1d) trendType="STRONG SELL";
-else if(t15&&t1h) trendType="SHORT TERM BUY";
-else if(!t15&&!t1h) trendType="SHORT TERM SELL";
-
-trend.innerHTML=trendType;
-
-// FINAL
-let final="NO TRADE";
-
-if(precisionSignal==="BUY" && trendType.includes("BUY")) final="TAKE BUY";
-else if(precisionSignal==="SELL" && trendType.includes("SELL")) final="TAKE SELL";
-else if(precisionSignal!=="NO TRADE") final="SCALP ONLY";
-
-decision.innerHTML=final;
-
-}
-
+// ================= REFRESH =================
 function refresh(){
  location.reload();
 }
