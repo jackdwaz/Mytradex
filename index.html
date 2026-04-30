@@ -1,1 +1,210 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>All-in-One Trading System</title>
 
+<script src="https://s3.tradingview.com/tv.js"></script>
+
+<style>
+body { margin:0; font-family:sans-serif; background:#0d1117; color:#fff; }
+.container { max-width:420px; margin:auto; padding:10px; }
+.card { background:#161b22; padding:12px; border-radius:10px; margin-bottom:10px; }
+input, button {
+  width:100%; padding:10px; margin:5px 0;
+  border:none; border-radius:8px; background:#0d1117; color:#fff;
+}
+button { background:#238636; }
+.buy{color:#00ff9f;} .sell{color:#ff4d4d;}
+#chart{height:300px;}
+</style>
+</head>
+
+<body>
+<div class="container">
+
+<h2>📊 Trading System</h2>
+
+<div class="card">
+<input id="symbol" placeholder="Enter Symbol (BTCUSDT)">
+<button onclick="loadChart()">Load Chart</button>
+</div>
+
+<div id="chart"></div>
+
+<div class="card">
+<h3>📡 Live Price</h3>
+<div id="price">-</div>
+</div>
+
+<div class="card">
+<h3>🧠 Signal Engine</h3>
+<div id="signal">Waiting...</div>
+</div>
+
+<div class="card">
+<h3>📊 Backtest</h3>
+<div id="backtest">-</div>
+<button onclick="runBacktest()">Run Backtest</button>
+</div>
+
+<div class="card">
+<h3>💰 Profit Calculator (₹)</h3>
+<input id="capital" placeholder="Capital ₹">
+<input id="risk" placeholder="Risk %">
+<input id="reward" placeholder="Target %">
+<button onclick="calcProfit()">Calculate</button>
+<div id="profitResult"></div>
+</div>
+
+<button onclick="resetAll()">Reset</button>
+
+</div>
+
+<script>
+
+let ws;
+let currentSymbol="BTCUSDT";
+let prices=[];
+
+// ================= CHART =================
+function loadChart(){
+  currentSymbol = document.getElementById("symbol").value.toUpperCase() || "BTCUSDT";
+  document.getElementById("chart").innerHTML="";
+  
+  let tvSymbol = currentSymbol.endsWith("USDT") ? "BINANCE:"+currentSymbol : currentSymbol;
+
+  new TradingView.widget({
+    container_id:"chart",
+    symbol:tvSymbol,
+    interval:"60",
+    theme:"dark",
+    width:"100%",
+    height:300
+  });
+
+  startWebSocket();
+}
+
+// ================= WEBSOCKET =================
+function startWebSocket(){
+  if(ws) ws.close();
+
+  ws = new WebSocket(`wss://stream.binance.com:9443/ws/${currentSymbol.toLowerCase()}@trade`);
+
+  ws.onmessage = (e)=>{
+    let data = JSON.parse(e.data);
+    let price = parseFloat(data.p);
+
+    document.getElementById("price").innerText = price;
+
+    prices.push(price);
+    if(prices.length>100) prices.shift();
+
+    analyze();
+  };
+}
+
+// ================= ANALYSIS =================
+function analyze(){
+
+  if(prices.length<20) return;
+
+  let emaFast = average(prices.slice(-9));
+  let emaSlow = average(prices.slice(-21));
+
+  let rsi = calcRSI(prices);
+
+  let signal="NO TRADE";
+  let mode="";
+
+  // Trend
+  if(emaFast > emaSlow){
+    mode="Trend";
+    signal="🟢 BUY";
+  }
+  else if(emaFast < emaSlow){
+    mode="Trend";
+    signal="🔴 SELL";
+  }
+
+  // Divergence (simple)
+  if(prices[prices.length-1] < prices[prices.length-2] && rsi>50){
+    signal="🟢 REVERSAL BUY";
+    mode="Reversal";
+  }
+
+  if(prices[prices.length-1] > prices[prices.length-2] && rsi<50){
+    signal="🔴 REVERSAL SELL";
+    mode="Reversal";
+  }
+
+  document.getElementById("signal").innerHTML =
+    signal + "<br>Mode: " + mode +
+    "<br>RSI: "+rsi.toFixed(1);
+}
+
+// ================= RSI =================
+function calcRSI(arr){
+  let gains=0, losses=0;
+  for(let i=1;i<arr.length;i++){
+    let diff = arr[i]-arr[i-1];
+    if(diff>0) gains+=diff;
+    else losses-=diff;
+  }
+  let rs = gains/(losses || 1);
+  return 100 - (100/(1+rs));
+}
+
+// ================= BACKTEST =================
+function runBacktest(){
+  let wins=0, trades=0;
+
+  for(let i=20;i<prices.length;i++){
+    let sub = prices.slice(i-20,i);
+    let emaFast = average(sub.slice(-9));
+    let emaSlow = average(sub.slice(-21));
+
+    if(emaFast > emaSlow){
+      trades++;
+      if(sub[sub.length-1] > sub[sub.length-2]) wins++;
+    }
+  }
+
+  let winRate = trades ? (wins/trades*100).toFixed(1):0;
+
+  document.getElementById("backtest").innerText =
+    "Trades: "+trades+" | WinRate: "+winRate+"%";
+}
+
+// ================= PROFIT =================
+function calcProfit(){
+  let cap = parseFloat(capital.value);
+  let risk = parseFloat(risk.value)/100;
+  let reward = parseFloat(reward.value)/100;
+
+  let riskAmt = cap*risk;
+  let rewardAmt = cap*reward;
+
+  document.getElementById("profitResult").innerText =
+    "Risk: ₹"+riskAmt.toFixed(2) +
+    " | Reward: ₹"+rewardAmt.toFixed(2);
+}
+
+// ================= UTIL =================
+function average(arr){
+  return arr.reduce((a,b)=>a+b,0)/arr.length;
+}
+
+// ================= RESET =================
+function resetAll(){
+  prices=[];
+  document.getElementById("signal").innerText="Reset Done";
+}
+
+loadChart();
+
+</script>
+</body>
+</html>
