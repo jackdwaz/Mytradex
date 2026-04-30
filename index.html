@@ -1,61 +1,54 @@
 <!DOCTYPE html>
-<html lang="en">
+<html>
 <head>
-<meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>All-in-One Trading System</title>
-
+<title>Ultimate Trading Engine</title>
 <script src="https://s3.tradingview.com/tv.js"></script>
 
 <style>
-body { margin:0; font-family:sans-serif; background:#0d1117; color:#fff; }
-.container { max-width:420px; margin:auto; padding:10px; }
-.card { background:#161b22; padding:12px; border-radius:10px; margin-bottom:10px; }
-input, button {
-  width:100%; padding:10px; margin:5px 0;
-  border:none; border-radius:8px; background:#0d1117; color:#fff;
-}
-button { background:#238636; }
-.buy{color:#00ff9f;} .sell{color:#ff4d4d;}
-#chart{height:300px;}
+body{background:#0d1117;color:#fff;font-family:sans-serif;margin:0}
+.container{max-width:420px;margin:auto;padding:10px}
+.card{background:#161b22;padding:12px;border-radius:10px;margin-bottom:10px}
+input,button{width:100%;padding:10px;margin:5px 0;border:none;border-radius:8px;background:#0d1117;color:#fff}
+button{background:#238636}
+.buy{color:#00ff9f}.sell{color:#ff4d4d}
+#chart{height:280px}
 </style>
 </head>
 
 <body>
 <div class="container">
 
-<h2>📊 Trading System</h2>
+<h2>🚀 Trading Engine</h2>
 
 <div class="card">
-<input id="symbol" placeholder="Enter Symbol (BTCUSDT)">
-<button onclick="loadChart()">Load Chart</button>
+<input id="symbol" placeholder="BTCUSDT / ETHUSDT">
+<button onclick="init()">Load</button>
 </div>
 
 <div id="chart"></div>
 
+<div class="card"><b>📡 Price:</b> <span id="price">-</span></div>
+
 <div class="card">
-<h3>📡 Live Price</h3>
-<div id="price">-</div>
+<h3>🧠 Signal</h3>
+<div id="signal">Waiting...</div>
 </div>
 
 <div class="card">
-<h3>🧠 Signal Engine</h3>
-<div id="signal">Waiting...</div>
+<h3>📊 Order Book</h3>
+<div id="orderbook">-</div>
 </div>
 
 <div class="card">
 <h3>📊 Backtest</h3>
 <div id="backtest">-</div>
-<button onclick="runBacktest()">Run Backtest</button>
+<button onclick="backtest()">Run</button>
 </div>
 
 <div class="card">
-<h3>💰 Profit Calculator (₹)</h3>
-<input id="capital" placeholder="Capital ₹">
-<input id="risk" placeholder="Risk %">
-<input id="reward" placeholder="Target %">
-<button onclick="calcProfit()">Calculate</button>
-<div id="profitResult"></div>
+<h3>📜 Trade Log</h3>
+<ul id="log"></ul>
 </div>
 
 <button onclick="resetAll()">Reset</button>
@@ -64,146 +57,161 @@ button { background:#238636; }
 
 <script>
 
-let ws;
-let currentSymbol="BTCUSDT";
-let prices=[];
+let ws, prices=[], highs=[], lows=[];
+let symbol="BTCUSDT";
 
-// ================= CHART =================
-function loadChart(){
-  currentSymbol = document.getElementById("symbol").value.toUpperCase() || "BTCUSDT";
-  document.getElementById("chart").innerHTML="";
-  
-  let tvSymbol = currentSymbol.endsWith("USDT") ? "BINANCE:"+currentSymbol : currentSymbol;
+// ================= INIT =================
+function init(){
+ symbol = document.getElementById("symbol").value.toUpperCase()||"BTCUSDT";
+ document.getElementById("chart").innerHTML="";
+ 
+ new TradingView.widget({
+  container_id:"chart",
+  symbol:"BINANCE:"+symbol,
+  interval:"60",
+  theme:"dark",
+  width:"100%",
+  height:280
+ });
 
-  new TradingView.widget({
-    container_id:"chart",
-    symbol:tvSymbol,
-    interval:"60",
-    theme:"dark",
-    width:"100%",
-    height:300
-  });
-
-  startWebSocket();
+ startWS();
+ fetchOrderBook();
 }
 
 // ================= WEBSOCKET =================
-function startWebSocket(){
-  if(ws) ws.close();
+function startWS(){
+ if(ws) ws.close();
 
-  ws = new WebSocket(`wss://stream.binance.com:9443/ws/${currentSymbol.toLowerCase()}@trade`);
+ ws = new WebSocket(`wss://stream.binance.com:9443/ws/${symbol.toLowerCase()}@trade`);
 
-  ws.onmessage = (e)=>{
-    let data = JSON.parse(e.data);
-    let price = parseFloat(data.p);
+ ws.onmessage=e=>{
+  let d=JSON.parse(e.data);
+  let p=parseFloat(d.p);
 
-    document.getElementById("price").innerText = price;
+  price.innerText=p;
 
-    prices.push(price);
-    if(prices.length>100) prices.shift();
+  prices.push(p);
+  if(prices.length>200) prices.shift();
 
-    analyze();
-  };
+  analyze();
+ };
 }
 
 // ================= ANALYSIS =================
 function analyze(){
 
-  if(prices.length<20) return;
+ if(prices.length<50) return;
 
-  let emaFast = average(prices.slice(-9));
-  let emaSlow = average(prices.slice(-21));
+ let ema9=ema(prices,9);
+ let ema21=ema(prices,21);
+ let rsi=calcRSI(prices);
 
-  let rsi = calcRSI(prices);
+ let direction="",cls="",mode="";
 
-  let signal="NO TRADE";
-  let mode="";
+// Trend
+ if(ema9>ema21){direction="BUY";cls="buy";mode="Trend";}
+ else{direction="SELL";cls="sell";mode="Trend";}
 
-  // Trend
-  if(emaFast > emaSlow){
-    mode="Trend";
-    signal="🟢 BUY";
-  }
-  else if(emaFast < emaSlow){
-    mode="Trend";
-    signal="🔴 SELL";
-  }
+// Divergence (improved simple)
+ let last=prices[prices.length-1];
+ let prev=prices[prices.length-2];
 
-  // Divergence (simple)
-  if(prices[prices.length-1] < prices[prices.length-2] && rsi>50){
-    signal="🟢 REVERSAL BUY";
-    mode="Reversal";
-  }
+ if(last<prev && rsi>50){direction="REV BUY";mode="Reversal";}
+ if(last>prev && rsi<50){direction="REV SELL";mode="Reversal";}
 
-  if(prices[prices.length-1] > prices[prices.length-2] && rsi<50){
-    signal="🔴 REVERSAL SELL";
-    mode="Reversal";
-  }
+// Entry / SL / TP
+ let entry=last;
+ let sl = direction.includes("BUY") ? entry*0.98 : entry*1.02;
+ let tp = direction.includes("BUY") ? entry*1.04 : entry*0.96;
 
-  document.getElementById("signal").innerHTML =
-    signal + "<br>Mode: " + mode +
-    "<br>RSI: "+rsi.toFixed(1);
+// Holding
+ let hold = rsi>60||rsi<40 ? "Scalp (mins)" : "Intraday (hrs)";
+
+// Leverage
+ let lev = Math.abs(entry-sl)/entry <0.02 ? "5x-10x" : "2x-3x";
+
+// Confidence
+ let conf = Math.min(100, Math.abs(ema9-ema21)*10000);
+
+// OUTPUT
+signal.innerHTML = `
+<span class="${cls}">${direction}</span><br>
+Mode: ${mode}<br>
+Entry: ${entry.toFixed(4)}<br>
+SL: ${sl.toFixed(4)}<br>
+TP: ${tp.toFixed(4)}<br>
+Hold: ${hold}<br>
+Leverage: ${lev}<br>
+Confidence: ${conf.toFixed(0)}%
+`;
+
+logTrade(direction, entry);
+
+}
+
+// ================= EMA =================
+function ema(arr,p){
+ let k=2/(p+1),e=arr[0];
+ for(let i=1;i<arr.length;i++){e=arr[i]*k+e*(1-k)}
+ return e;
 }
 
 // ================= RSI =================
-function calcRSI(arr){
-  let gains=0, losses=0;
-  for(let i=1;i<arr.length;i++){
-    let diff = arr[i]-arr[i-1];
-    if(diff>0) gains+=diff;
-    else losses-=diff;
-  }
-  let rs = gains/(losses || 1);
-  return 100 - (100/(1+rs));
+function calcRSI(a){
+ let g=0,l=0;
+ for(let i=1;i<a.length;i++){
+  let d=a[i]-a[i-1];
+  if(d>0)g+=d; else l-=d;
+ }
+ let rs=g/(l||1);
+ return 100-100/(1+rs);
+}
+
+// ================= ORDER BOOK =================
+async function fetchOrderBook(){
+ let res=await fetch(`https://api.binance.com/api/v3/depth?symbol=${symbol}&limit=5`);
+ let d=await res.json();
+ orderbook.innerHTML=`Bid: ${d.bids[0][0]} | Ask: ${d.asks[0][0]}`;
 }
 
 // ================= BACKTEST =================
-function runBacktest(){
-  let wins=0, trades=0;
+function backtest(){
+ let wins=0,trades=0;
 
-  for(let i=20;i<prices.length;i++){
-    let sub = prices.slice(i-20,i);
-    let emaFast = average(sub.slice(-9));
-    let emaSlow = average(sub.slice(-21));
+ for(let i=30;i<prices.length;i++){
+  let sub=prices.slice(i-30,i);
+  let e9=ema(sub,9),e21=ema(sub,21);
 
-    if(emaFast > emaSlow){
-      trades++;
-      if(sub[sub.length-1] > sub[sub.length-2]) wins++;
-    }
+  if(e9>e21){
+   trades++;
+   if(sub[sub.length-1]>sub[sub.length-2]) wins++;
   }
+ }
 
-  let winRate = trades ? (wins/trades*100).toFixed(1):0;
-
-  document.getElementById("backtest").innerText =
-    "Trades: "+trades+" | WinRate: "+winRate+"%";
+ let wr=trades? (wins/trades*100).toFixed(1):0;
+ backtest.innerText=`Trades: ${trades} | WinRate: ${wr}%`;
 }
 
-// ================= PROFIT =================
-function calcProfit(){
-  let cap = parseFloat(capital.value);
-  let risk = parseFloat(risk.value)/100;
-  let reward = parseFloat(reward.value)/100;
-
-  let riskAmt = cap*risk;
-  let rewardAmt = cap*reward;
-
-  document.getElementById("profitResult").innerText =
-    "Risk: ₹"+riskAmt.toFixed(2) +
-    " | Reward: ₹"+rewardAmt.toFixed(2);
-}
-
-// ================= UTIL =================
-function average(arr){
-  return arr.reduce((a,b)=>a+b,0)/arr.length;
+// ================= LOG =================
+function logTrade(dir,price){
+ let li=document.createElement("li");
+ li.innerText=`${dir} @ ${price.toFixed(2)}`;
+ log.prepend(li);
+ if(log.children.length>10) log.removeChild(log.lastChild);
 }
 
 // ================= RESET =================
 function resetAll(){
-  prices=[];
-  document.getElementById("signal").innerText="Reset Done";
+ if(ws) ws.close();
+ prices=[];
+ signal.innerText="Reset Done";
+ price.innerText="-";
+ orderbook.innerText="-";
+ backtest.innerText="-";
+ log.innerHTML="";
 }
 
-loadChart();
+init();
 
 </script>
 </body>
