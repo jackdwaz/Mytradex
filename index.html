@@ -2,7 +2,7 @@
 <html>
 <head>
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Trading Dashboard PRO</title>
+<title>Ultimate Trading System PRO+</title>
 <script src="https://s3.tradingview.com/tv.js"></script>
 
 <style>
@@ -24,10 +24,10 @@ button { background:#238636; }
 
 <div class="container">
 
-<h2>🚀 Trading Dashboard PRO</h2>
+<h2>🚀 Ultimate Trading System PRO+</h2>
 
 <div class="card">
-<input id="symbolInput" placeholder="BTCUSDT / SHIBUSDT">
+<input id="symbolInput" placeholder="BTCUSDT / ETHUSDT">
 <button onclick="init()">Load</button>
 </div>
 
@@ -35,14 +35,16 @@ button { background:#238636; }
 
 <div class="card">📡 Price: <span id="price">-</span></div>
 
+<!-- AUTO SIGNAL -->
 <div class="card">
 <h3>🤖 Auto Signal</h3>
 <div id="autoSignal">Waiting...</div>
 </div>
 
+<!-- MTF SIGNAL -->
 <div class="card">
-<h3>📊 Order Book</h3>
-<div id="orderbook">-</div>
+<h3>🧠 Market Direction (MTF)</h3>
+<div id="mtfSignal">Waiting...</div>
 </div>
 
 <button onclick="refresh()">🔄 Refresh</button>
@@ -54,6 +56,7 @@ button { background:#238636; }
 let symbol="BTCUSDT";
 let ws;
 
+// INIT
 function init(){
  symbol=document.getElementById("symbolInput").value.toUpperCase()||"BTCUSDT";
 
@@ -69,12 +72,11 @@ function init(){
  });
 
  startWS();
- fetchOrderBook();
  loadData();
  setInterval(loadData,5000);
 }
 
-// ================= WEBSOCKET =================
+// WS
 function startWS(){
  if(ws) ws.close();
 
@@ -82,33 +84,27 @@ function startWS(){
 
  ws.onmessage=e=>{
   let d=JSON.parse(e.data);
-  price.innerText=parseFloat(d.p);
+  price.innerText=parseFloat(d.p).toFixed(6);
  };
 }
 
-// ================= ORDER BOOK =================
-async function fetchOrderBook(){
- let res=await fetch(`https://api.binance.com/api/v3/depth?symbol=${symbol}&limit=5`);
- let d=await res.json();
- orderbook.innerHTML=`Bid: ${d.bids[0][0]} | Ask: ${d.asks[0][0]}`;
-}
-
-// ================= FETCH =================
+// FETCH
 async function getCandles(tf){
  let res=await fetch(`https://api.binance.com/api/v3/klines?symbol=${symbol}&interval=${tf}&limit=100`);
  let d=await res.json();
  return d.map(x=>({
-  open:+x[1], high:+x[2], low:+x[3], close:+x[4], volume:+x[5]
+  close:+x[4], high:+x[2], low:+x[3], volume:+x[5]
  }));
 }
 
-// ================= INDICATORS =================
+// EMA
 function ema(arr,p){
  let k=2/(p+1),e=arr[0];
  for(let i=1;i<arr.length;i++){e=arr[i]*k+e*(1-k)}
  return e;
 }
 
+// RSI
 function rsi(arr){
  let g=0,l=0;
  for(let i=1;i<arr.length;i++){
@@ -119,10 +115,15 @@ function rsi(arr){
  return 100-(100/(1+rs));
 }
 
-// ================= ENGINE =================
+// MAIN
 async function loadData(){
 
  let c5 = await getCandles("5m");
+ let c15 = await getCandles("15m");
+ let c1h = await getCandles("1h");
+ let c4h = await getCandles("4h");
+ let c1d = await getCandles("1d");
+
  let close5 = c5.map(c=>c.close);
  let vol5 = c5.map(c=>c.volume);
 
@@ -131,59 +132,92 @@ async function loadData(){
 
  let rsi5 = rsi(close5.slice(-14));
 
- let last=c5[c5.length-1];
- let prev=c5[c5.length-2];
+ let last = c5[c5.length-1];
+ let prev = c5[c5.length-2];
 
-// NO TRADE
-if(rsi5>45 && rsi5<55){
- autoSignal.innerHTML=`<span class="warn">NO TRADE (Sideways)</span>`;
- return;
+ let signal="NO TRADE", cls="", score=0;
+ let valid=true;
+
+// ===== FILTER =====
+let move=Math.abs(last.close-prev.low)/last.close;
+
+if(move<0.002 || (rsi5>45 && rsi5<55)){
+ valid=false;
 }
 
-// DISTANCE
-let move = Math.abs(last.close - prev.low);
-let percentMove = move / last.close;
+// ===== SCORE =====
+if(ema9>ema21) score+=25;
+if(last.close>prev.high) score+=25;
+if(rsi5>55) score+=10;
 
-// FILTER SMALL MOVES
-if(percentMove < 0.002){
- autoSignal.innerHTML=`<span class="warn">NO TRADE (Low Movement)</span>`;
- return;
+// ===== SIGNAL =====
+if(valid && score>=50){
+ signal = last.close>prev.high ? "BUY" : "SELL";
+ cls = signal==="BUY"?"buy":"sell";
 }
 
-// SIGNAL
-let isBuy = ema9 > ema21 && last.close > prev.high;
-let isSell = ema9 < ema21 && last.close < prev.low;
+// ===== TP/SL FIX =====
+let entry=last.close;
+let sl = signal==="BUY"? entry*0.99 : entry*1.01;
+let tp = signal==="BUY"? entry*1.02 : entry*0.98;
 
-if(!isBuy && !isSell){
- autoSignal.innerHTML=`NO TRADE`;
- return;
+// HOLD LOGIC
+let hold="No Trade";
+if(signal==="BUY" || signal==="SELL"){
+ hold = move>0.01?"5–15 min":"15–60 min";
 }
 
-// ENTRY
-let entry = last.close;
-
-// SL (1% minimum)
-let sl = isBuy ? entry * 0.99 : entry * 1.01;
-
-// TP (2%)
-let tp = isBuy ? entry * 1.02 : entry * 0.98;
-
-// HOLD
-let hold = percentMove > 0.01 ? "5–15 min" : "15–60 min";
-
-// OUTPUT
+// OUTPUT AUTO
 autoSignal.innerHTML=`
-<span class="${isBuy?"buy":"sell"}">${isBuy?"BUY":"SELL"}</span><br>
+<span class="${cls}">${signal}</span><br>
 Entry: ${entry.toFixed(6)}<br>
 SL: ${sl.toFixed(6)}<br>
 TP: ${tp.toFixed(6)}<br>
 Hold: ${hold}<br>
-RR: 1:2
+Score: ${score}/100
+`;
+
+// ===== MTF LOGIC =====
+function trend(arr){
+ return ema(arr.map(c=>c.close).slice(-30),9) > ema(arr.map(c=>c.close).slice(-30),21);
+}
+
+let t15=trend(c15);
+let t1h=trend(c1h);
+let t4h=trend(c4h);
+let t1d=trend(c1d);
+
+let mtfType="NO TRADE", mtfHold="";
+
+if(t15 && t1h && t4h && t1d){
+ mtfType="STRONG BUY"; mtfHold="Hold: Hours → Days";
+}
+else if(!t15 && !t1h && !t4h && !t1d){
+ mtfType="STRONG SELL"; mtfHold="Hold: Hours → Days";
+}
+else if(t15 && t1h){
+ mtfType="SHORT TERM BUY"; mtfHold="Hold: 5–60 min";
+}
+else if(!t15 && !t1h){
+ mtfType="SHORT TERM SELL"; mtfHold="Hold: 5–60 min";
+}
+else{
+ mtfType="MIXED"; mtfHold="Avoid Trade";
+}
+
+// OUTPUT MTF
+mtfSignal.innerHTML=`
+${t15?"🟢":"🔴"} 15m  
+${t1h?"🟢":"🔴"} 1H  
+${t4h?"🟢":"🔴"} 4H  
+${t1d?"🟢":"🔴"} 1D<br><br>
+
+<b>${mtfType}</b><br>
+${mtfHold}
 `;
 
 }
 
-// ================= REFRESH =================
 function refresh(){
  location.reload();
 }
