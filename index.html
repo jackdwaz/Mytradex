@@ -136,9 +136,38 @@ function trend(arr){
 
 let t15=trend(c15),t1h=trend(c1h),t4h=trend(c4h),t1d=trend(c1d);
 
-mtfSignal.innerHTML=`
-${t15?"🟢":"🔴"} ${t1h?"🟢":"🔴"} ${t4h?"🟢":"🔴"} ${t1d?"🟢":"🔴"}
+let mtfType = "MIXED";
+let mtfAdvice = "Avoid Trade";
+
+// Decision Logic
+if(t15 && t1h && t4h && t1d){
+ mtfType = "STRONG BUY";
+ mtfAdvice = "Hold: Hours → Days";
+}
+else if(!t15 && !t1h && !t4h && !t1d){
+ mtfType = "STRONG SELL";
+ mtfAdvice = "Hold: Hours → Days";
+}
+else if(t15 && t1h){
+ mtfType = "SHORT TERM BUY";
+ mtfAdvice = "Hold: 5–60 min";
+}
+else if(!t15 && !t1h){
+ mtfType = "SHORT TERM SELL";
+ mtfAdvice = "Hold: 5–60 min";
+}
+
+// OUTPUT (CLEAN UI)
+mtfSignal.innerHTML = `
+<b>15m:</b> ${t15?"🟢":"🔴"}<br>
+<b>1H:</b> ${t1h?"🟢":"🔴"}<br>
+<b>4H:</b> ${t4h?"🟢":"🔴"}<br>
+<b>1D:</b> ${t1d?"🟢":"🔴"}<br><br>
+
+<b>${mtfType}</b><br>
+${mtfAdvice}
 `;
+    
 
 // ===== AI =====
 let ai=0;
