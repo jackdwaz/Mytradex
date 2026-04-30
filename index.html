@@ -2,7 +2,7 @@
 <html>
 <head>
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Ultimate Trading System PRO+</title>
+<title>Ultimate Trading AI System</title>
 <script src="https://s3.tradingview.com/tv.js"></script>
 
 <style>
@@ -16,6 +16,7 @@ input,button {
 button { background:#238636; }
 .buy{color:#00ff9f;} .sell{color:#ff4d4d;}
 .warn{color:#ffaa00;}
+.ai{color:#00c3ff;}
 #chart { height:300px; }
 </style>
 </head>
@@ -24,7 +25,7 @@ button { background:#238636; }
 
 <div class="container">
 
-<h2>🚀 Ultimate Trading System PRO+</h2>
+<h2>🚀 Ultimate Trading AI System</h2>
 
 <div class="card">
 <input id="symbolInput" placeholder="BTCUSDT / ETHUSDT">
@@ -35,16 +36,19 @@ button { background:#238636; }
 
 <div class="card">📡 Price: <span id="price">-</span></div>
 
-<!-- AUTO SIGNAL -->
 <div class="card">
 <h3>🤖 Auto Signal</h3>
 <div id="autoSignal">Waiting...</div>
 </div>
 
-<!-- MTF SIGNAL -->
 <div class="card">
 <h3>🧠 Market Direction (MTF)</h3>
 <div id="mtfSignal">Waiting...</div>
+</div>
+
+<div class="card">
+<h3>🧠 AI Predictor</h3>
+<div id="aiSignal">Waiting...</div>
 </div>
 
 <button onclick="refresh()">🔄 Refresh</button>
@@ -53,12 +57,15 @@ button { background:#238636; }
 
 <script>
 
-let symbol="BTCUSDT";
+let symbol = localStorage.getItem("symbol") || "BTCUSDT";
 let ws;
 
 // INIT
 function init(){
- symbol=document.getElementById("symbolInput").value.toUpperCase()||"BTCUSDT";
+
+ symbol = document.getElementById("symbolInput").value.toUpperCase() || symbol;
+
+ localStorage.setItem("symbol", symbol); // ✅ SAVE SYMBOL
 
  document.getElementById("chart").innerHTML="";
 
@@ -138,36 +145,34 @@ async function loadData(){
  let signal="NO TRADE", cls="", score=0;
  let valid=true;
 
-// ===== FILTER =====
+// FILTER
 let move=Math.abs(last.close-prev.low)/last.close;
-
 if(move<0.002 || (rsi5>45 && rsi5<55)){
  valid=false;
 }
 
-// ===== SCORE =====
+// SCORE LOGIC
 if(ema9>ema21) score+=25;
 if(last.close>prev.high) score+=25;
-if(rsi5>55) score+=10;
+if(rsi5>55) score+=15;
+if(move>0.005) score+=15;
 
-// ===== SIGNAL =====
-if(valid && score>=50){
+// SIGNAL
+if(valid && score>=60){
  signal = last.close>prev.high ? "BUY" : "SELL";
  cls = signal==="BUY"?"buy":"sell";
 }
 
-// ===== TP/SL FIX =====
+// ENTRY
 let entry=last.close;
 let sl = signal==="BUY"? entry*0.99 : entry*1.01;
 let tp = signal==="BUY"? entry*1.02 : entry*0.98;
 
-// HOLD LOGIC
 let hold="No Trade";
-if(signal==="BUY" || signal==="SELL"){
+if(signal!=="NO TRADE"){
  hold = move>0.01?"5–15 min":"15–60 min";
 }
 
-// OUTPUT AUTO
 autoSignal.innerHTML=`
 <span class="${cls}">${signal}</span><br>
 Entry: ${entry.toFixed(6)}<br>
@@ -177,7 +182,7 @@ Hold: ${hold}<br>
 Score: ${score}/100
 `;
 
-// ===== MTF LOGIC =====
+// ===== MTF =====
 function trend(arr){
  return ema(arr.map(c=>c.close).slice(-30),9) > ema(arr.map(c=>c.close).slice(-30),21);
 }
@@ -187,37 +192,45 @@ let t1h=trend(c1h);
 let t4h=trend(c4h);
 let t1d=trend(c1d);
 
-let mtfType="NO TRADE", mtfHold="";
+let mtfType="MIXED";
+if(t15 && t1h && t4h && t1d) mtfType="STRONG BUY";
+else if(!t15 && !t1h && !t4h && !t1d) mtfType="STRONG SELL";
+else if(t15 && t1h) mtfType="SHORT TERM BUY";
+else if(!t15 && !t1h) mtfType="SHORT TERM SELL";
 
-if(t15 && t1h && t4h && t1d){
- mtfType="STRONG BUY"; mtfHold="Hold: Hours → Days";
-}
-else if(!t15 && !t1h && !t4h && !t1d){
- mtfType="STRONG SELL"; mtfHold="Hold: Hours → Days";
-}
-else if(t15 && t1h){
- mtfType="SHORT TERM BUY"; mtfHold="Hold: 5–60 min";
-}
-else if(!t15 && !t1h){
- mtfType="SHORT TERM SELL"; mtfHold="Hold: 5–60 min";
-}
-else{
- mtfType="MIXED"; mtfHold="Avoid Trade";
-}
-
-// OUTPUT MTF
 mtfSignal.innerHTML=`
 ${t15?"🟢":"🔴"} 15m  
 ${t1h?"🟢":"🔴"} 1H  
 ${t4h?"🟢":"🔴"} 4H  
 ${t1d?"🟢":"🔴"} 1D<br><br>
+<b>${mtfType}</b>
+`;
 
-<b>${mtfType}</b><br>
-${mtfHold}
+// ===== AI ENGINE =====
+let aiScore = score;
+
+if(mtfType.includes("STRONG")) aiScore+=20;
+if(mtfType.includes("SHORT")) aiScore+=10;
+if(!valid) aiScore-=30;
+
+let confidence = Math.min(100, aiScore);
+
+let advice="WAIT";
+
+if(confidence>75 && signal!=="NO TRADE") advice="ENTER NOW";
+else if(confidence>60) advice="GOOD SETUP";
+else if(confidence>40) advice="WEAK SETUP";
+else advice="AVOID";
+
+aiSignal.innerHTML=`
+<span class="ai">AI Confidence: ${confidence}%</span><br>
+Trade Quality: ${confidence>75?"High":confidence>50?"Medium":"Low"}<br>
+Advice: ${advice}
 `;
 
 }
 
+// REFRESH
 function refresh(){
  location.reload();
 }
