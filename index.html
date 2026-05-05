@@ -2,7 +2,7 @@
 <html>
 <head>
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Trading AI 🤖</title>
+<title>Trading AI 🤖 Multi Asset</title>
 <script src="https://s3.tradingview.com/tv.js"></script>
 
 <style>
@@ -10,26 +10,18 @@ body { background:#0d1117; color:#fff; font-family:sans-serif; margin:0; }
 .container { max-width:420px; margin:auto; padding:10px; }
 .card { background:#161b22; padding:12px; border-radius:10px; margin-bottom:10px; }
 input,button {
-    width:100%; padding:10px; margin:5px 0;
-    border:none; border-radius:8px; background:#0d1117; color:#fff;
+ width:100%; padding:10px; margin:5px 0;
+ border:none; border-radius:8px; background:#0d1117; color:#fff;
 }
 button { background:#238636; }
 .buy{color:#00ff9f;} .sell{color:#ff4d4d;}
 .warn{color:#ffaa00;} .ai{color:#00c3ff;}
-#chart { height:300px; }
-
-/* ALERT BOX */
 .alertBox{
- position:fixed;
- bottom:20px;
- left:50%;
+ position:fixed; bottom:20px; left:50%;
  transform:translateX(-50%);
- background:#00ff9f;
- color:#000;
- padding:12px 20px;
- border-radius:10px;
- font-weight:bold;
- z-index:9999;
+ background:#00ff9f; color:#000;
+ padding:12px 20px; border-radius:10px;
+ font-weight:bold; z-index:9999;
 }
 </style>
 </head>
@@ -38,25 +30,19 @@ button { background:#238636; }
 
 <div class="container">
 
-<h2>Trading AI 🤖</h2>
+<h2>Trading AI 🤖 Multi Asset</h2>
 
 <div class="card">
-<input id="symbolInput" placeholder="BTCUSDT / ETHUSDT">
+<input id="symbolInput" placeholder="BTCUSDT / GOLD / OIL / AAPL">
 <button onclick="init()">Load</button>
 </div>
 
 <div id="chart"></div>
-
 <div class="card">📡 Price: <span id="price">-</span></div>
 
 <div class="card"><h3>🤖 Auto Signal</h3><div id="autoSignal"></div></div>
 <div class="card"><h3>🧠 MTF Trend</h3><div id="mtfSignal"></div></div>
 <div class="card"><h3>🧠 AI Predictor</h3><div id="aiSignal"></div></div>
-<div class="card"><h3>🎯 Sniper Entry</h3><div id="sniper"></div></div>
-<div class="card"><h3>💧 Liquidity</h3><div id="liquidityBox"></div></div>
-<div class="card"><h3>📈 Spot Holding AI</h3><div id="spotAI"></div></div>
-
-<button onclick="refresh()">🔄 Refresh</button>
 
 </div>
 
@@ -64,45 +50,67 @@ button { background:#238636; }
 
 let symbol = localStorage.getItem("symbol") || "BTCUSDT";
 let ws;
+let lastAlertSignal="";
 
-// ✅ ALERT CONTROL
-let lastAlertSignal = "";
+// ===== SYMBOL MAPPING =====
+function getTVSymbol(sym){
 
-// INIT
+ if(sym.endsWith("USDT")) return "BINANCE:"+sym;
+
+ if(sym==="GOLD" || sym==="XAUUSD") return "OANDA:XAUUSD";
+ if(sym==="OIL") return "TVC:USOIL";
+
+ // default stock
+ return "NASDAQ:"+sym;
+}
+
+// ===== INIT =====
 function init(){
+
  symbol=document.getElementById("symbolInput").value.toUpperCase()||symbol;
  localStorage.setItem("symbol",symbol);
 
  document.getElementById("chart").innerHTML="";
+
  new TradingView.widget({
   container_id:"chart",
-  symbol:"BINANCE:"+symbol,
+  symbol:getTVSymbol(symbol),
   interval:"15",
   theme:"dark",
   width:"100%",
   height:300
  });
 
- startWS();
- loadData();
- setInterval(loadData,5000);
+ // Only crypto gets live + AI
+ if(symbol.endsWith("USDT")){
+  startWS();
+  loadData();
+  setInterval(loadData,5000);
+ } else {
+  price.innerText="N/A";
+  autoSignal.innerHTML="<span class='warn'>Not supported for this asset</span>";
+  mtfSignal.innerHTML="-";
+  aiSignal.innerHTML="-";
+ }
 }
 
-// WS
+// ===== WS (CRYPTO ONLY) =====
 function startWS(){
  if(ws) ws.close();
+
  ws=new WebSocket(`wss://stream.binance.com:9443/ws/${symbol.toLowerCase()}@trade`);
+
  ws.onmessage=e=>{
   let d=JSON.parse(e.data);
   price.innerText=parseFloat(d.p).toFixed(6);
  };
 }
 
-// FETCH
+// ===== FETCH =====
 async function get(tf){
  let r=await fetch(`https://api.binance.com/api/v3/klines?symbol=${symbol}&interval=${tf}&limit=100`);
  let d=await r.json();
- return d.map(x=>({c:+x[4],h:+x[2],l:+x[3],v:+x[5]}));
+ return d.map(x=>({c:+x[4],h:+x[2],l:+x[3]}));
 }
 
 // EMA
@@ -112,16 +120,16 @@ function ema(a,p){
  return e;
 }
 
-// ALERT UI
+// ALERT
 function showAlert(msg){
- let box = document.createElement("div");
+ let box=document.createElement("div");
  box.className="alertBox";
- box.innerText = msg;
+ box.innerText=msg;
  document.body.appendChild(box);
  setTimeout(()=>box.remove(),3000);
 }
 
-// MAIN
+// ===== MAIN (CRYPTO ONLY) =====
 async function loadData(){
 
 let c5=await get("5m");
@@ -139,97 +147,41 @@ let ema21=ema(close5.slice(-30),21);
 
 let move=Math.abs(last.c-prev.l)/last.c;
 
-// ===== AUTO SIGNAL =====
+// AUTO
 let signal="NO TRADE",cls="";
 if(move>0.003 && ema9>ema21 && last.c>prev.h){signal="BUY";cls="buy";}
 if(move>0.003 && ema9<ema21 && last.c<prev.l){signal="SELL";cls="sell";}
 
-let entry=last.c;
-let sl=signal==="BUY"?entry*0.99:entry*1.01;
-let tp=signal==="BUY"?entry*1.03:entry*0.97;
+autoSignal.innerHTML=`<span class="${cls}">${signal}</span>`;
 
-autoSignal.innerHTML=`
-<span class="${cls}">${signal}</span><br>
-Entry: ${entry.toFixed(6)}<br>
-SL: ${sl.toFixed(6)}<br>
-TP: ${tp.toFixed(6)}
-`;
-
-// ===== MTF =====
+// MTF
 function trend(arr){
  return ema(arr.map(x=>x.c).slice(-30),9)>ema(arr.map(x=>x.c).slice(-30),21);
 }
 
 let t15=trend(c15),t1h=trend(c1h),t4h=trend(c4h),t1d=trend(c1d);
 
-let mtfType="MIXED", mtfAdvice="Avoid Trade";
+mtfSignal.innerHTML=`15m:${t15?"🟢":"🔴"} 1H:${t1h?"🟢":"🔴"} 4H:${t4h?"🟢":"🔴"} 1D:${t1d?"🟢":"🔴"}`;
 
-if(t15 && t1h && t4h && t1d){
- mtfType="STRONG BUY"; mtfAdvice="Hold: Hours → Days";
-}
-else if(!t15 && !t1h && !t4h && !t1d){
- mtfType="STRONG SELL"; mtfAdvice="Hold: Hours → Days";
-}
-else if(t15 && t1h){
- mtfType="SHORT TERM BUY"; mtfAdvice="Hold: 5–60 min";
-}
-else if(!t15 && !t1h){
- mtfType="SHORT TERM SELL"; mtfAdvice="Hold: 5–60 min";
-}
-
-mtfSignal.innerHTML=`
-<b>15m:</b> ${t15?"🟢":"🔴"}<br>
-<b>1H:</b> ${t1h?"🟢":"🔴"}<br>
-<b>4H:</b> ${t4h?"🟢":"🔴"}<br>
-<b>1D:</b> ${t1d?"🟢":"🔴"}<br><br>
-<b>${mtfType}</b><br>${mtfAdvice}
-`;
-
-// ===== AI =====
+// AI
 let ai=0;
 if(t15)ai+=15;if(t1h)ai+=25;if(t4h)ai+=30;if(t1d)ai+=30;
 if(signal!=="NO TRADE")ai+=10;
 
-let advice=ai>75?"ENTER":ai>60?"GOOD":ai>40?"WEAK":"AVOID";
+let advice=ai>75?"ENTER":"WAIT";
 
-aiSignal.innerHTML=`
-<span class="ai">Confidence: ${ai}%</span><br>
-Advice: ${advice}
-`;
+aiSignal.innerHTML=`Confidence: ${ai}% | ${advice}`;
 
-// ===== SNIPER =====
-let body=Math.abs(last.c-last.l);
-let range=last.h-last.l;
-let sniperReady=(body/range)>0.6 && move>0.004;
+// ALERT
+let currentSignal=signal+"_"+advice;
 
-sniper.innerHTML=sniperReady?"🎯 READY":"⏳ WAIT";
-
-// ===== LIQUIDITY =====
-let stopHunt=last.h>prev.h && last.c<prev.h;
-liquidityBox.innerHTML=stopHunt?"⚠️ STOP HUNT":"Clean Move";
-
-// ===== SPOT HOLD =====
-function strength(t){return t?1:0}
-let holdScore=strength(t15)+strength(t1h)*2+strength(t4h)*3+strength(t1d)*4;
-
-let holdText="Avoid";
-if(holdScore>=7) holdText="Best: 4H → 1D+";
-else if(holdScore>=4) holdText="Good: 1H → 4H";
-else if(holdScore>=2) holdText="Short: 15m → 1H";
-
-spotAI.innerHTML=holdText;
-
-// ===== ALERT FIX =====
-let currentSignal = signal + "_" + advice;
-
-if(ai>80 && sniperReady && currentSignal!==lastAlertSignal){
+if(ai>80 && currentSignal!==lastAlertSignal){
  lastAlertSignal=currentSignal;
  showAlert("🚀 High Probability Trade");
 }
 
 }
 
-function refresh(){location.reload();}
 init();
 
 </script>
